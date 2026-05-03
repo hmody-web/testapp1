@@ -411,76 +411,52 @@ Widget _page(BuildContext context, String title, String text) {
   return Directionality(
     textDirection: TextDirection.rtl,
     child: Scaffold(
-      backgroundColor:
-          isDark ? Color(0xFF121212) : Colors.grey[100],
+      backgroundColor: isDark ? Color(0xFF121212) : Colors.grey[100],
 
- appBar: PreferredSize(
-  preferredSize: Size.fromHeight(53),
-  child: Container(
-    height: 53,
-    decoration: BoxDecoration(
-      color: isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.1),
-          blurRadius: 8,
-          offset: Offset(0, 3),
+      // ✅ AppBar عادي بدون PreferredSize
+      appBar: AppBar(
+        backgroundColor: isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+        elevation: 2,
+        automaticallyImplyLeading: false,
+
+        // ✅ زر الرجوع على اليمين (بسبب RTL يصير leading)
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_forward_ios,
+            color: isDark ? Colors.white : Colors.black,
+            size: 20,
+          ),
+          onPressed: () => Navigator.pop(context),
         ),
-      ],
-    ),
-    child: SafeArea(
-      bottom: false, // 🔥 يمنع زيادة الارتفاع من الأسفل
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          children: [
 
-            // 🔙 زر الرجوع (يمين)
-            IconButton(
-              icon: Icon(
-                Icons.arrow_back,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
+        title: Text(
+          title,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: "Tajawal",
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
 
-            SizedBox(width: 10),
+        // ✅ مساحة فارغة لتوازن العنوان
+        actions: [SizedBox(width: 48)],
 
-            // 🔤 العنوان
-            Expanded(
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: "Tajawal",
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black,
-                ),
-              ),
-            ),
-
-            SizedBox(width: 48),
-          ],
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Container(height: 1, color: Colors.red),
         ),
       ),
-    ),
-  ),
-),
 
-      // 🔥 سحب للرجوع
+      // ✅ السحب لليمين = رجوع
       body: GestureDetector(
-        onHorizontalDragUpdate: (details) {
-  if (details.delta.dx < -50) {  // ✅ الآن يتحقق من السحب لليسار
-    Navigator.pop(context);
-  }
-},
-onHorizontalDragEnd: (details) {
-  // للسحب السريع (السواب)
-  if (details.primaryVelocity != null && details.primaryVelocity! < -800) {
-    Navigator.pop(context);
-  }
-},
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragEnd: (details) {
+          if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
+            Navigator.pop(context);
+          }
+        },
         child: Padding(
           padding: EdgeInsets.all(20),
           child: Text(
@@ -497,7 +473,6 @@ onHorizontalDragEnd: (details) {
     ),
   );
 }
-
 class SplashScreen extends StatefulWidget {
   @override
   _SplashScreenState createState() => _SplashScreenState();
