@@ -1,22 +1,26 @@
 name: project1
-description: "A new Flutter project."
+description: A new Flutter project.
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.11.5
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
+
   cupertino_icons: ^1.0.8
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
+  flutter_native_splash: ^2.4.0
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.13.1  
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -32,4 +36,15 @@ flutter:
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/images/icon.png"
+  image_path: assets/images/icon.png
+  
+flutter_native_splash:
+  color: "#121212" # 🔥 الخلفية
+  image: assets/images/logo.png # 🔥 اللوجو
+
+  android: true
+  ios: true
+
+  android_12:
+    image: assets/images/logo.png
+    color: "#121212"  

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  runApp(MyApp());
+   runApp(MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: SplashScreen(),
+  ));
 }
 
+// 🔥 Stateful للتحكم بالثيم + حفظه
 class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => _MyAppState();
@@ -11,6 +16,27 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool isDark = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadTheme();
+  }
+
+  void loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isDark = prefs.getBool("theme") ?? true;
+    });
+  }
+
+  void toggleTheme() async {
+    final prefs = await SharedPreferences.getInstance(); 
+    setState(() {
+      isDark = !isDark;
+      prefs.setBool("theme", isDark);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +47,7 @@ class _MyAppState extends State<MyApp> {
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       home: HomePage(
         isDark: isDark,
-        onToggle: () {
-          setState(() {
-            isDark = !isDark;
-          });
-        },
+        onToggle: toggleTheme,
       ),
     );
   }
@@ -58,6 +80,7 @@ class HomePage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
 
+            // 🔴 السويتش
             Transform.scale(
               scale: 0.8,
               child: Switch(
@@ -67,6 +90,7 @@ class HomePage extends StatelessWidget {
               ),
             ),
 
+            // 🔵 اللوجو + النص
             Row(
               children: [
                 Text(
@@ -93,6 +117,9 @@ class HomePage extends StatelessWidget {
                     child: Image.asset(
                       "assets/images/logo.png",
                       height: 35,
+                      errorBuilder: (c, e, s) {
+                        return Icon(Icons.image_not_supported);
+                      },
                     ),
                   ),
                 ),
@@ -103,6 +130,7 @@ class HomePage extends StatelessWidget {
       ),
 
       body: SingleChildScrollView(
+        physics: ClampingScrollPhysics(), // 🔥 منع السحب الزائد
         child: Column(
           children: [
 
@@ -170,7 +198,7 @@ class HomePage extends StatelessWidget {
               ),
             ),
 
-            // 🔥 الكروت (تم تعديلها فقط)
+            // 🔥 الكروت
             Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(vertical: 25),
@@ -238,7 +266,7 @@ class HomePage extends StatelessWidget {
                   SizedBox(height: 10),
 
                   Text(
-                    "مطور ويب محترف مع خبرة في تطوير المواقع والتطبيقات والويب المتقدمة.",
+                    "مطور ويب محترف مع خبرة في تطوير المواقع والتطبيقات.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: "Tajawal",
@@ -250,36 +278,6 @@ class HomePage extends StatelessWidget {
             ),
 
             SizedBox(height: 30),
-
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      "أحدث المنشورات",
-                      style: TextStyle(
-                        fontFamily: "Tajawal",
-                        fontSize: 22,
-                        color:
-                            isDark ? Colors.white : Colors.black,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    Container(
-                      width: 60,
-                      height: 2,
-                      color: Colors.red,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SizedBox(height: 20),
 
             // 🔥 المنشورات
             Column(
@@ -294,59 +292,18 @@ class HomePage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(15),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(15)),
-                        child: Image.asset(
-                          "assets/images/post.png",
-                          height: 180,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
+                      Image.asset(
+                        "assets/images/post.png",
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
                       ),
-
                       Padding(
                         padding: EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              "عنوان المنشور ${index + 1}",
-                              style: TextStyle(
-                                fontFamily: "Tajawal",
-                                fontSize: 18,
-                                color: Colors.red,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-
-                            SizedBox(height: 5),
-
-                            Text(
-                              "هذا وصف تجريبي للمنشور، يمكنك تعديله لاحقاً.",
-                              style: TextStyle(
-                                fontFamily: "Tajawal",
-                                color: isDark
-                                    ? Colors.white
-                                    : Colors.black,
-                              ),
-                            ),
-
-                            SizedBox(height: 10),
-
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.grey[700],
-                                ),
-                                onPressed: () {},
-                                child: Text("الدخول للموقع"),
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          "عنوان المنشور ${index + 1}",
+                          style: TextStyle(color: Colors.red),
                         ),
                       ),
                     ],
@@ -360,6 +317,7 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  // 🔥 كرت
   Widget _card(BuildContext context, IconData icon, String text, Widget page, bool isDark) {
     return Expanded(
       child: InkWell(
@@ -368,20 +326,34 @@ class HomePage extends StatelessWidget {
           Navigator.push(
             context,
             PageRouteBuilder(
-              transitionDuration: Duration(milliseconds: 350),
-              pageBuilder: (_, __, ___) => page,
-              transitionsBuilder: (_, animation, __, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween(
-                      begin: Offset(0.2, 0),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
-                  ),
-                );
-              },
+            transitionDuration: Duration(milliseconds: 200),
+
+pageBuilder: (_, __, ___) => page,
+
+transitionsBuilder: (_, animation, secondaryAnimation, child) {
+
+  final fadeIn = Tween(begin: 0.0, end: 1.0).animate(
+    CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeInOut,
+    ),
+  );
+
+  final fadeOut = Tween(begin: 1.0, end: 0.0).animate(
+    CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.easeInOut,
+    ),
+  );
+
+  return FadeTransition(
+    opacity: fadeIn,
+    child: FadeTransition(
+      opacity: fadeOut,
+      child: child,
+    ),
+  );
+},
             ),
           );
         },
@@ -391,20 +363,17 @@ class HomePage extends StatelessWidget {
           decoration: BoxDecoration(
             color: isDark ? Color(0xFF1E1E1E) : Colors.white,
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: Colors.black12),
           ),
           child: Column(
             children: [
-              Icon(icon, color: Colors.red, size: 30),
+              Icon(icon, color: Colors.red),
               SizedBox(height: 10),
-              Text(
-                text,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: "Tajawal",
-                  color: isDark ? Colors.white : Colors.black,
-                ),
-              ),
+              Text(text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: "Tajawal",
+                    color: isDark ? Colors.white : Colors.black,
+                  )),
             ],
           ),
         ),
@@ -417,34 +386,190 @@ class HomePage extends StatelessWidget {
 class HostingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _page("استضافة المواقع", "هنا تضيف تفاصيل الاستضافة...");
+    return _page(context, "استضافة المواقع", "تفاصيل الاستضافة...");
   }
 }
 
 class StorePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _page("متاجر الكترونية", "هنا تضيف تفاصيل المتاجر...");
+    return _page(context, "متاجر الكترونية", "تفاصيل المتاجر...");
   }
 }
 
 class AppsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _page("تطبيقات الموبايل", "هنا تضيف تفاصيل التطبيقات...");
+    return _page(context, "تطبيقات الموبايل", "تفاصيل التطبيقات...");
   }
 }
 
-Widget _page(String title, String text) {
-  return Scaffold(
-    appBar: AppBar(title: Text(title)),
-    body: Padding(
-      padding: EdgeInsets.all(20),
-      child: Text(
-        text,
-        textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 18),
+// 🔥 صفحة مع رجوع يمين + سحب
+Widget _page(BuildContext context, String title, String text) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+
+  return Directionality(
+    textDirection: TextDirection.rtl,
+    child: Scaffold(
+      backgroundColor:
+          isDark ? Color(0xFF121212) : Colors.grey[100],
+
+ appBar: PreferredSize(
+  preferredSize: Size.fromHeight(100),
+  child: Container(
+    height: 53,
+    decoration: BoxDecoration(
+      color: isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.1),
+          blurRadius: 8,
+          offset: Offset(0, 3),
+        ),
+      ],
+    ),
+    child: SafeArea(
+      bottom: false, // 🔥 يمنع زيادة الارتفاع من الأسفل
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 10),
+        child: Row(
+          children: [
+
+            // 🔙 زر الرجوع (يمين)
+            IconButton(
+              icon: Icon(
+                Icons.arrow_back,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+
+            SizedBox(width: 10),
+
+            // 🔤 العنوان
+            Expanded(
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: "Tajawal",
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+            ),
+
+            SizedBox(width: 48),
+          ],
+        ),
+      ),
+    ),
+  ),
+),
+
+      // 🔥 سحب للرجوع
+      body: GestureDetector(
+        onHorizontalDragUpdate: (details) {
+          if (details.delta.dx > 10) {
+            Navigator.pop(context);
+          }
+        },
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            text,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontFamily: "Tajawal",
+              fontSize: 18,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+        ),
       ),
     ),
   );
 }
+
+class SplashScreen extends StatefulWidget {
+  @override
+  _SplashScreenState createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+
+  late AnimationController controller;
+  late Animation<double> scaleAnimation;
+  late Animation<double> fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 300), // مدة الانميشن
+    );
+
+    scaleAnimation = Tween<double>(begin: 1.0, end: 20.0).animate(
+      CurvedAnimation(
+        parent: controller,
+        curve: Curves.easeIn,
+      ),
+    );
+
+    fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: controller,
+        curve: Curves.easeOut,
+      ),
+    );
+
+    // انتظار بسيط قبل الانميشن
+    Future.delayed(Duration(milliseconds: 1200), () {
+      controller.forward().then((_) {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            transitionDuration: Duration(milliseconds: 200),
+            pageBuilder: (_, __, ___) => MyApp(),
+          ),
+        );
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Color(0xFF121212),
+      body: Center(
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (context, child) {
+            return Opacity(
+              opacity: fadeAnimation.value,
+              child: Transform.scale(
+                scale: scaleAnimation.value,
+                child: child,
+              ),
+            );
+          },
+          child: Image.asset(
+            "assets/images/logo.png",
+            width: 120,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
