@@ -60,7 +60,6 @@ body: SingleChildScrollView(
     child: Column(
   children: [
 
-    // 🔥 الهيدر (الصورة)
     Container(
       width: double.infinity,
       height: 300,
@@ -131,14 +130,13 @@ Container(
   width: double.infinity,
   padding: EdgeInsets.symmetric(vertical: 25),
   decoration: BoxDecoration(
-    color: Color.fromARGB(255, 34, 34, 34), // 👈 خلفية مختلفة
+    color: Color.fromARGB(255, 34, 34, 34),
   ),
   child: Padding(
     padding: EdgeInsets.symmetric(horizontal: 15),
     child: Row(
       children: [
 
-        // الكرت 1
         Expanded(
           child: Container(
             margin: EdgeInsets.symmetric(horizontal: 5),
@@ -165,7 +163,6 @@ Container(
           ),
         ),
 
-        // الكرت 2
         Expanded(
           child: Container(
             margin: EdgeInsets.symmetric(horizontal: 5),
@@ -192,7 +189,6 @@ Container(
           ),
         ),
 
-        // الكرت 3
         Expanded(
           child: Container(
             margin: EdgeInsets.symmetric(horizontal: 5),
@@ -236,7 +232,6 @@ Container(
   child: Column(
     children: [
 
-      // 🔥 الصورة الدائرية
       Container(
   padding: EdgeInsets.all(3),
   decoration: BoxDecoration(
@@ -250,7 +245,7 @@ Container(
         "assets/images/profile.png",
         width: 200,
         height: 200,
-        fit: BoxFit.cover, // 👈 هذا يضمن الامتلاء الكامل
+        fit: BoxFit.cover, 
       ),
     ),
   ),
@@ -258,7 +253,6 @@ Container(
 
       SizedBox(height: 15),
 
-      // 🔥 الاسم
       Text(
         "محمد السراي",
         style: TextStyle(
@@ -271,7 +265,6 @@ Container(
 
       SizedBox(height: 10),
 
-      // 🔥 الوصف
       Text(
         "مطور ويب محترف مع خبرة في تطوير المواقع والتطبيقات والويب المتقدمة.",
         textAlign: TextAlign.center,
@@ -287,7 +280,6 @@ Container(
 
 SizedBox(height: 30),
 
-// 🔴 العنوان
 Padding(
   padding: EdgeInsets.symmetric(horizontal: 20),
   child: Align(
@@ -317,7 +309,6 @@ Padding(
 
 SizedBox(height: 20),
 
-// 🔥 قائمة المنشورات (8)
 Column(
   children: List.generate(8, (index) {
     return Container(
@@ -330,18 +321,16 @@ Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          // 🔹 الصورة
           ClipRRect(
             borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
             child: Image.asset(
-              "assets/images/post.png", // غيرها حسب صورك
+              "assets/images/post.png", 
               height: 180,
               width: double.infinity,
               fit: BoxFit.cover,
             ),
           ),
 
-          // 🔹 المحتوى
           Padding(
             padding: EdgeInsets.all(12),
             child: Column(
@@ -352,7 +341,6 @@ Column(
 
                 SizedBox(height: 5),
 
-                // العنوان
                 Text(
                   "عنوان المنشور ${index + 1}",
                   style: TextStyle(
@@ -366,7 +354,6 @@ Column(
 
                 SizedBox(height: 5),
 
-                // الوصف
                 Text(
                   "هذا وصف تجريبي للمنشور، يمكنك تعديله وربطه مع قاعدة البيانات لاحقاً.",
                   style: TextStyle(
@@ -378,7 +365,6 @@ Column(
 
                 SizedBox(height: 10),
 
-                // الزر
                 Align(
                   alignment: Alignment.centerLeft,
                   child: ElevatedButton(
