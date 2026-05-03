@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'dart:ui';
 void main() {
    runApp(MaterialApp(
     debugShowCheckedModeBanner: false,
@@ -241,8 +241,8 @@ class HomePage extends StatelessWidget {
                     child: CircleAvatar(
                       radius: 100,
                       child: ClipOval(
-                        child: Image.asset(
-                          "assets/images/profile.png",
+                        child: ClickableImage(
+                         imagePath:  "assets/images/profile.png",
                           width: 200,
                           height: 200,
                           fit: BoxFit.cover,
@@ -293,8 +293,8 @@ class HomePage extends StatelessWidget {
                   ),
                   child: Column(
                     children: [
-                      Image.asset(
-                        "assets/images/post.png",
+                      ClickableImage(
+                        imagePath: "assets/images/post.png",
                         height: 180,
                         width: double.infinity,
                         fit: BoxFit.cover,
@@ -318,68 +318,16 @@ class HomePage extends StatelessWidget {
   }
 
   // 🔥 كرت
-  Widget _card(BuildContext context, IconData icon, String text, Widget page, bool isDark) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(15),
-        onTap: () {
-          Navigator.push(
-            context,
-            PageRouteBuilder(
-            transitionDuration: Duration(milliseconds: 200),
-
-pageBuilder: (_, __, ___) => page,
-
-transitionsBuilder: (_, animation, secondaryAnimation, child) {
-
-  final fadeIn = Tween(begin: 0.0, end: 1.0).animate(
-    CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeInOut,
+Widget _card(BuildContext context, IconData icon, String text, Widget page, bool isDark) {
+  return Expanded(
+    child: _HoverCard(
+      icon: icon,
+      text: text,
+      page: page,
+      isDark: isDark,
     ),
   );
-
-  final fadeOut = Tween(begin: 1.0, end: 0.0).animate(
-    CurvedAnimation(
-      parent: secondaryAnimation,
-      curve: Curves.easeInOut,
-    ),
-  );
-
-  return FadeTransition(
-    opacity: fadeIn,
-    child: FadeTransition(
-      opacity: fadeOut,
-      child: child,
-    ),
-  );
-},
-            ),
-          );
-        },
-        child: Container(
-          margin: EdgeInsets.symmetric(horizontal: 5),
-          padding: EdgeInsets.symmetric(vertical: 20),
-          decoration: BoxDecoration(
-            color: isDark ? Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: Colors.red),
-              SizedBox(height: 10),
-              Text(text,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: "Tajawal",
-                    color: isDark ? Colors.white : Colors.black,
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+}
 }
 
 // 🔥 الصفحات
@@ -396,7 +344,275 @@ class StorePage extends StatelessWidget {
     return _page(context, "متاجر الكترونية", "تفاصيل المتاجر...");
   }
 }
+class _HoverCard extends StatefulWidget {
+  final IconData icon;
+  final String text;
+  final Widget page;
+  final bool isDark;
 
+  const _HoverCard({
+    required this.icon,
+    required this.text,
+    required this.page,
+    required this.isDark,
+  });
+
+  @override
+  State<_HoverCard> createState() => _HoverCardState();
+}
+class ClickableImage extends StatelessWidget {
+  final String imagePath;
+  final double? height;
+  final double? width;
+  final BoxFit fit;
+
+  const ClickableImage({
+    required this.imagePath,
+    this.height,
+    this.width,
+    this.fit = BoxFit.cover,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+PageRouteBuilder(
+  opaque: false, // 🔥 أهم سطر
+  barrierColor: Colors.transparent, // 🔥 يلغي الخلفية الرمادية
+
+  transitionDuration: Duration(milliseconds: 100),
+  reverseTransitionDuration: Duration(milliseconds: 100),
+
+  pageBuilder: (_, __, ___) => ImageViewer(imagePath: imagePath),
+
+  transitionsBuilder: (_, animation, __, child) {
+    return FadeTransition(
+      opacity: animation,
+      child: child,
+    );
+  },
+),
+        );
+      },
+      child: Image.asset(
+        imagePath,
+        height: height,
+        width: width,
+        fit: fit,
+      ),
+    );
+  }
+}
+class ImageViewer extends StatefulWidget {
+  final String imagePath;
+
+  const ImageViewer({required this.imagePath});
+
+  @override
+  State<ImageViewer> createState() => _ImageViewerState();
+}
+
+class _ImageViewerState extends State<ImageViewer>
+    with SingleTickerProviderStateMixin {
+
+  double offsetY = 0;
+  double scale = 1.0;
+
+  late AnimationController controller;
+  late Animation<double> animation;
+
+  void close() {
+    Navigator.pop(context);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 200),
+    );
+
+    animation = Tween<double>(begin: 0, end: 0).animate(controller)
+      ..addListener(() {
+        setState(() {
+          offsetY = animation.value;
+          scale = 1 - (offsetY.abs() / 600);
+        });
+      });
+  }
+
+  void animateBack() {
+    animation = Tween<double>(begin: offsetY, end: 0).animate(
+      CurvedAnimation(parent: controller, curve: Curves.easeOut),
+    );
+
+    controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    double opacity = 1 - (offsetY.abs() / 300);
+    opacity = opacity.clamp(0.0, 1.0);
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+
+body: Stack(
+  children: [
+
+    // 🔥 الخلفية (tap فقط)
+    GestureDetector(
+      onTap: close,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+          sigmaY: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+        ),
+        child: Container(
+          color: Colors.black.withOpacity(0.3),
+        ),
+      ),
+    ),
+
+    // 📸 الصورة (هنا الجستشر الحقيقي)
+    Center(
+      child: GestureDetector(
+        onVerticalDragUpdate: (details) {
+          setState(() {
+            offsetY += details.delta.dy;
+            scale = 1 - (offsetY.abs() / 600);
+            scale = scale.clamp(0.7, 1.0);
+          });
+        },
+
+        onVerticalDragEnd: (details) {
+          if (offsetY.abs() > 150) {
+            close();
+          } else {
+            animateBack();
+          }
+        },
+
+        child: Transform.translate(
+          offset: Offset(0, offsetY),
+          child: Transform.scale(
+            scale: scale,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(
+                (offsetY.abs()).clamp(0, 50),
+              ),
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 5,
+                child: Image.asset(widget.imagePath),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ],
+),
+    );
+  }
+}
+class _HoverCardState extends State<_HoverCard> {
+  bool isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: () {
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              transitionDuration: Duration(milliseconds: 200),
+              pageBuilder: (_, __, ___) => widget.page,
+transitionsBuilder: (_, animation, secondaryAnimation, child) {
+
+  // 👈 دخول من اليسار
+  final inAnimation = Tween<Offset>(
+    begin: Offset(-1, 0),
+    end: Offset(0, 0),
+  ).animate(
+    CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeInOut,
+    ),
+  );
+
+  // 👉 خروج لليسار
+  final outAnimation = Tween<Offset>(
+    begin: Offset(0, 0),
+    end: Offset(-1, 0),
+  ).animate(
+    CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.easeInOut,
+    ),
+  );
+
+  return SlideTransition(
+    position: inAnimation,
+    child: SlideTransition(
+      position: outAnimation,
+      child: child,
+    ),
+  );
+},
+            ),
+          );
+        },
+
+        child: AnimatedContainer(
+          duration: Duration(milliseconds: 200),
+          margin: EdgeInsets.symmetric(horizontal: 5),
+          padding: EdgeInsets.symmetric(vertical: 20),
+          decoration: BoxDecoration(
+            color: isHovered
+                ? (widget.isDark
+                    ? const Color.fromARGB(255, 212, 42, 42).withOpacity(0.7)
+                    : const Color.fromARGB(255, 212, 42, 42).withOpacity(0.2))
+                : (widget.isDark
+                    ? Color(0xFF1E1E1E)
+                    : Colors.white),
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Column(
+            children: [
+              Icon(widget.icon, color: Colors.red),
+              SizedBox(height: 10),
+              Text(
+                widget.text,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: "Tajawal",
+                  color: widget.isDark ? Colors.white : Colors.black,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 class AppsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -410,54 +626,46 @@ Widget _page(BuildContext context, String title, String text) {
 
   return Directionality(
     textDirection: TextDirection.rtl,
-    child: Scaffold(
-      backgroundColor: isDark ? Color(0xFF121212) : Colors.grey[100],
+    child: _SwipePageWrapper(
+      child: Scaffold(
+        backgroundColor: isDark ? Color(0xFF121212) : Colors.grey[100],
 
-      // ✅ AppBar عادي بدون PreferredSize
-      appBar: AppBar(
-        backgroundColor: isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
-        elevation: 2,
-        automaticallyImplyLeading: false,
+        appBar: AppBar(
+          backgroundColor: isDark
+              ? Color.fromARGB(255, 22, 22, 22)
+              : Colors.white,
+          elevation: 2,
+          automaticallyImplyLeading: false,
 
-        // ✅ زر الرجوع على اليمين (بسبب RTL يصير leading)
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_forward_ios,
-            color: isDark ? Colors.white : Colors.black,
-            size: 20,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_forward_ios,
+              color: isDark ? Colors.white : Colors.black,
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
           ),
-          onPressed: () => Navigator.pop(context),
-        ),
 
-        title: Text(
-          title,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: "Tajawal",
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: isDark ? Colors.white : Colors.black,
+          title: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: "Tajawal",
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+
+          actions: [SizedBox(width: 48)],
+
+          bottom: PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Container(height: 1, color: Colors.red),
           ),
         ),
 
-        // ✅ مساحة فارغة لتوازن العنوان
-        actions: [SizedBox(width: 48)],
-
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Container(height: 1, color: Colors.red),
-        ),
-      ),
-
-      // ✅ السحب لليمين = رجوع
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragEnd: (details) {
-          if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
-            Navigator.pop(context);
-          }
-        },
-        child: Padding(
+        body: Padding(
           padding: EdgeInsets.all(20),
           child: Text(
             text,
@@ -472,6 +680,83 @@ Widget _page(BuildContext context, String title, String text) {
       ),
     ),
   );
+}
+class _SwipePageWrapper extends StatefulWidget {
+  final Widget child;
+
+  const _SwipePageWrapper({required this.child});
+
+  @override
+  State<_SwipePageWrapper> createState() => _SwipePageWrapperState();
+}
+
+class _SwipePageWrapperState extends State<_SwipePageWrapper>
+    with SingleTickerProviderStateMixin {
+
+  double offsetX = 0;
+
+  late AnimationController controller;
+  late Animation<double> animation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 200),
+    );
+
+    animation = Tween<double>(begin: 0, end: 0).animate(controller)
+      ..addListener(() {
+        setState(() {
+          offsetX = animation.value;
+        });
+      });
+  }
+
+  void animateBack() {
+    animation = Tween<double>(begin: offsetX, end: 0).animate(
+      CurvedAnimation(parent: controller, curve: Curves.easeOut),
+    );
+
+    controller.forward(from: 0);
+  }
+
+  void close() {
+    Navigator.pop(context);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        setState(() {
+          offsetX += details.delta.dx;
+          if (offsetX > 0) offsetX = 0; // يمنع السحب لليمين
+        });
+      },
+
+      onHorizontalDragEnd: (details) {
+        if (offsetX.abs() > 120) {
+          close();
+        } else {
+          animateBack();
+        }
+      },
+
+      child: Transform.translate(
+        offset: Offset(offsetX, 0),
+        child: widget.child,
+      ),
+    );
+  }
 }
 class SplashScreen extends StatefulWidget {
   @override
