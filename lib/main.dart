@@ -415,7 +415,7 @@ Widget _page(BuildContext context, String title, String text) {
           isDark ? Color(0xFF121212) : Colors.grey[100],
 
  appBar: PreferredSize(
-  preferredSize: Size.fromHeight(100),
+  preferredSize: Size.fromHeight(53),
   child: Container(
     height: 53,
     decoration: BoxDecoration(
@@ -471,10 +471,16 @@ Widget _page(BuildContext context, String title, String text) {
       // 🔥 سحب للرجوع
       body: GestureDetector(
         onHorizontalDragUpdate: (details) {
-          if (details.delta.dx > 10) {
-            Navigator.pop(context);
-          }
-        },
+  if (details.delta.dx < -50) {  // ✅ الآن يتحقق من السحب لليسار
+    Navigator.pop(context);
+  }
+},
+onHorizontalDragEnd: (details) {
+  // للسحب السريع (السواب)
+  if (details.primaryVelocity != null && details.primaryVelocity! < -800) {
+    Navigator.pop(context);
+  }
+},
         child: Padding(
           padding: EdgeInsets.all(20),
           child: Text(
@@ -510,7 +516,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     controller = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 300), // مدة الانميشن
+      duration: Duration(milliseconds: 400), // مدة الانميشن
     );
 
     scaleAnimation = Tween<double>(begin: 1.0, end: 20.0).animate(
