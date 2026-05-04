@@ -33,13 +33,19 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  void toggleTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      isDark = !isDark;
-      prefs.setBool("theme", isDark);
-    });
+void toggleTheme() async {
+  final prefs = await SharedPreferences.getInstance();
+  setState(() {
+    isDark = !isDark;
+    prefs.setBool("theme", isDark);
+  });
+
+  // ✅ اهتزاز عند التبديل
+  if (await Vibration.hasVibrator() ?? false) {
+    Vibration.vibrate(duration: 100); // يهتز 100ms
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -96,35 +102,31 @@ class HomePage extends StatelessWidget {
             // 🔵 اللوجو + النص
             Row(
               children: [
-                Text(
-                  "سكربتاتي",
-                  style: TextStyle(
-                    fontFamily: "Tajawal",
-                    fontSize: 24,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
+Text(
+  "سكربتاتي",
+  style: TextStyle(
+    fontFamily: "Tajawal",
+    fontSize: 24,
+    color: isDark ? Colors.white : Colors.red, // ✅ أحمر بدل الأسود
+  ),
+),
+
                 SizedBox(width: 10),
                 Transform.translate(
                   offset: Offset(0, -2),
                   child: ColorFiltered(
-                    colorFilter: isDark
-                        ? ColorFilter.mode(
-                            Colors.transparent,
-                            BlendMode.dst,
-                          )
-                        : ColorFilter.mode(
-                            Colors.black,
-                            BlendMode.srcIn,
-                          ),
-                    child: Image.asset(
-                      "assets/images/logo.png",
-                      height: 35,
-                      errorBuilder: (c, e, s) {
-                        return Icon(Icons.image_not_supported);
-                      },
-                    ),
-                  ),
+  colorFilter: isDark
+      ? ColorFilter.mode(Colors.transparent, BlendMode.dst) // داكن → طبيعي
+      : ColorFilter.mode(Colors.red, BlendMode.srcIn),      // فاتح → أحمر
+  child: Image.asset(
+    "assets/images/logo.png",
+    height: 35,
+    errorBuilder: (c, e, s) {
+      return Icon(Icons.image_not_supported);
+    },
+  ),
+),
+
                 ),
               ],
             ),
@@ -795,10 +797,12 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController controller;
   late Animation<double> scaleAnimation;
   late Animation<double> fadeAnimation;
+  bool isDark = true; // ✅ حالة الثيم
 
   @override
   void initState() {
     super.initState();
+    loadTheme(); // ✅ تحميل الثيم
 
     controller = AnimationController(
       vsync: this,
@@ -806,17 +810,11 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     scaleAnimation = Tween<double>(begin: 1.0, end: 20.0).animate(
-      CurvedAnimation(
-        parent: controller,
-        curve: Curves.easeIn,
-      ),
+      CurvedAnimation(parent: controller, curve: Curves.easeIn),
     );
 
     fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: controller,
-        curve: Curves.easeOut,
-      ),
+      CurvedAnimation(parent: controller, curve: Curves.easeOut),
     );
 
     Future.delayed(Duration(milliseconds: 1200), () {
@@ -832,16 +830,17 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
+  void loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isDark = prefs.getBool("theme") ?? true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF121212),
+      backgroundColor: isDark ? Color(0xFF121212) : Colors.white, // ✅ خلفية حسب الثيم
       body: Center(
         child: AnimatedBuilder(
           animation: controller,
@@ -854,10 +853,16 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             );
           },
-          child: Image.asset(
-            "assets/images/logo.png",
-            width: 120,
-          ),
+child: ColorFiltered(
+  colorFilter: isDark
+      ? ColorFilter.mode(Colors.transparent, BlendMode.dst) // داكن → اللوجو طبيعي
+      : ColorFilter.mode(Colors.red, BlendMode.srcIn),      // فاتح → اللوجو أحمر
+  child: Image.asset(
+    "assets/images/logo.png",
+    width: 120,
+  ),
+),
+
         ),
       ),
     );
