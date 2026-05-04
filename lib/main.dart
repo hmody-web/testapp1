@@ -200,7 +200,7 @@ class _GlassNavBar extends StatelessWidget {
     return SafeArea(
         bottom: false, // يخلي البار ينزل تحت
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 25),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(40),
           child: BackdropFilter(
@@ -220,17 +220,21 @@ child: GestureDetector(
     }
   },
   child: Container(
-    height: 56,
-    decoration: BoxDecoration(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(40),
-      border: Border.all(
-        color: isDark
-            ? Colors.white.withOpacity(0.18)
-            : Colors.black.withOpacity(0.10),
-        width: 0.5,
-      ),
-    ),
+    height: 60,
+decoration: BoxDecoration(
+  color: isDark 
+      ? Colors.red.withOpacity(0.03)   // 🔥 إذا الثيم داكن → أحمر خفيف
+      : const Color.fromARGB(255, 243, 33, 33).withOpacity(0.1), // 🔥 إذا الثيم فاتح → أزرق خفيف (مثال)
+  borderRadius: BorderRadius.circular(40),
+  border: Border.all(
+    color: isDark
+        ? Colors.white.withOpacity(0.18)
+        : Colors.black.withOpacity(0.10),
+    width: 0.5,
+  ),
+),
+
+
     child: LayoutBuilder(
       builder: (context, constraints) {
         final itemWidth = constraints.maxWidth / items.length;
@@ -372,16 +376,21 @@ class _NavBarItemState extends State<_NavBarItem>
 
   @override
   Widget build(BuildContext context) {
-    const activeColor = Color(0xFFFF3333);
-    final inactiveColor = widget.isDark
-        ? Colors.white.withOpacity(0.4)
-        : Colors.black.withOpacity(0.4);
+    // 🔥 لون الأيقونات والنصوص حسب الثيم
+final activeColor = widget.isDark 
+    ? Colors.red // إذا داكن → أحمر
+    : Colors.red; // إذا فاتح → أزرق (مثال)
 
-    final strength = _getActivationStrength();
-    final isFullyActive = strength > 0.99;
+final inactiveColor = widget.isDark
+    ? Colors.white.withOpacity(0.7)
+    : const Color.fromARGB(255, 73, 44, 44).withOpacity(0.8);
 
-    // تدرج اللون بناءً على قوة التأثير
-    final Color resolvedColor = Color.lerp(inactiveColor, activeColor, strength)!;
+final strength = _getActivationStrength();
+final isFullyActive = strength > 0.99;
+
+// تدرج اللون بناءً على قوة التأثير
+final Color resolvedColor = Color.lerp(inactiveColor, activeColor, strength)!;
+
 
     return Expanded(
       child: GestureDetector(
@@ -396,27 +405,47 @@ class _NavBarItemState extends State<_NavBarItem>
                 scale: isFullyActive
                     ? _scaleAnim
                     : AlwaysStoppedAnimation(1.0 + strength * 0.15),
-                child: Icon(
-                  strength > 0.5
-                      ? widget.item.activeIcon
-                      : widget.item.icon,
-                  color: resolvedColor,
-                  size: 21 + strength * 1.5,
-                ),
+child: Icon(
+  strength > 0.5
+      ? widget.item.activeIcon
+      : widget.item.icon,
+  color: resolvedColor,
+  size: 24 + strength * 1.5,
+  shadows: strength < 0.5   // 🔥 إذا الأيقونة غير مختارة
+      ? [
+          Shadow(
+            offset: Offset(0, 0),              // اتجاه الظل
+            blurRadius: 0.7,                     // شدة التمويه
+            color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1), // وضوح الظل
+          ),
+        ]
+      : [], // الأيقونة المختارة بدون ظل
+),
+
               ),
               const SizedBox(height: 3),
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 150),
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 10,
-                  fontWeight: strength > 0.5
-                      ? FontWeight.w600
-                      : FontWeight.w400,
-                  color: resolvedColor,
-                ),
-                child: Text(widget.item.label),
-              ),
+AnimatedDefaultTextStyle(
+  duration: const Duration(milliseconds: 150),
+  style: TextStyle(
+    fontFamily: 'Tajawal',
+    fontSize: 11,
+    fontWeight: FontWeight.bold,
+    color: resolvedColor,
+    shadows: strength < 0.7   // 🔥 إذا النص غير مختار
+        ? [
+            Shadow(
+              offset: Offset(0, 0), // اتجاه الظل
+              blurRadius: 0.5,          // درجة التمويه
+              
+              color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1), // لون الظل
+            ),
+          ]
+        : [], // النص المختار بدون ظل
+  ),
+  child: Text(widget.item.label),
+),
+
+
             ],
           ),
         ),
