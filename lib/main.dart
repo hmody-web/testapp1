@@ -75,9 +75,8 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  // ✅ قيمة مستمرة double بدل int + int + double
-  // تتحرك مع إصبع المستخدم: 0.0 → 1.0 → 2.0 → 3.0
-  double _activePage = 0.0;
+  int _currentIndex = 0;
+  double _currentPage = 0.0; // القيمة الدقيقة لموضع الصفحة
   late final PageController _pageController;
 
   final List<_NavItem> _items = [
@@ -108,14 +107,12 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     _pageController = PageController(initialPage: 0);
 
-    // ✅ نتابع _pageController.page مباشرة
-    // يُعطي قيمة مثل 1.47 أثناء السحب → تصبح _activePage مباشرةً
     _pageController.addListener(() {
       if (!_pageController.hasClients) return;
-      final page = _pageController.page;
-      if (page != null) {
-        setState(() => _activePage = page);
-      }
+      final page = _pageController.page ?? _currentIndex.toDouble();
+      setState(() {
+        _currentPage = page;
+      });
     });
   }
 
@@ -126,7 +123,9 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onTabTap(int index) {
-    setState(() => _activePage = index.toDouble());
+    setState(() {
+      _currentIndex = index;
+    });
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 400),
@@ -142,7 +141,10 @@ class _MainShellState extends State<MainShell> {
       extendBody: true,
       body: PageView(
         controller: _pageController,
-        onPageChanged: (i) => setState(() => _activePage = i.toDouble()),
+        onPageChanged: (i) => setState(() {
+          _currentIndex = i;
+          _currentPage = i.toDouble();
+        }),
         children: [
           HomePage(isDark: widget.isDark, onToggle: widget.onToggle),
           ScriptsPage(isDark: widget.isDark),
@@ -150,9 +152,9 @@ class _MainShellState extends State<MainShell> {
           SettingsPage(isDark: widget.isDark),
         ],
       ),
-      // ✅ نمرر activePage فقط بدل ثلاث قيم منفصلة
       bottomNavigationBar: _GlassNavBar(
-        activePage: _activePage,
+        currentPage: _currentPage,
+        currentIndex: _currentIndex,
         items: _items,
         isDark: widget.isDark,
         onTap: _onTabTap,
@@ -176,16 +178,18 @@ class _NavItem {
 }
 
 // ============================================================
-// 🔥 البار الزجاجي الاحترافي مع انتقال انسيابي
+// 🔥 البار الزجاجي الاحترافي مع تأثير الانتقال الانسيابي
 // ============================================================
 class _GlassNavBar extends StatelessWidget {
-  final double activePage; // ✅ قيمة مستمرة 0.0 ← 1.0 ← 2.0 ← 3.0
+  final double currentPage; // القيمة الدقيقة للصفحة (مثلاً 1.5 بين صفحتين)
+  final int currentIndex;
   final List<_NavItem> items;
   final bool isDark;
   final ValueChanged<int> onTap;
 
   const _GlassNavBar({
-    required this.activePage,
+    required this.currentPage,
+    required this.currentIndex,
     required this.items,
     required this.isDark,
     required this.onTap,
@@ -212,24 +216,40 @@ class _GlassNavBar extends StatelessWidget {
                   width: 0.5,
                 ),
               ),
-              child: Row(
-                children: List.generate(items.length, (i) {
-                  // ✅ نحسب "كمية النشاط" لكل زر بناءً على المسافة من activePage
-                  // distance = 0.0 → الزر نشط تماماً (activeAmount = 1.0)
-                  // distance = 1.0 → الزر بعيد تماماً (activeAmount = 0.0)
-                  final distance =
-                      (activePage - i).abs().clamp(0.0, 1.0);
-                  final activeAmount = 1.0 - distance;
-                  final isExactlyActive = (activePage - i).abs() < 0.01;
-
-                  return _NavBarItem(
-                    item: items[i],
-                    activeAmount: activeAmount,
-                    isActive: isExactlyActive,
-                    isDark: isDark,
-                    onTap: () => onTap(i),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final itemWidth = constraints.maxWidth / items.length;
+                  
+                  return Stack(
+                    children: [
+                      // 🔥 التأثير الأحمر المتحرك بسلاسة
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 0),
+                        curve: Curves.easeInOut,
+                        left: currentPage * itemWidth + 5,
+                        top: 5,
+                        bottom: 5,
+                        width: itemWidth - 10,
+                        child: _buildMovingIndicator(),
+                      ),
+                      
+                      // 🔥 الأزرار
+                      Row(
+                        children: List.generate(
+                          items.length,
+                          (i) => _NavBarItem(
+                            item: items[i],
+                            itemIndex: i,
+                            currentPage: currentPage,
+                            isDark: isDark,
+                            onTap: () => onTap(i),
+                            itemWidth: itemWidth,
+                          ),
+                        ),
+                      ),
+                    ],
                   );
-                }),
+                },
               ),
             ),
           ),
@@ -237,24 +257,54 @@ class _GlassNavBar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildMovingIndicator() {
+    // حساب نسبة الانتقال بين الأزرار
+    final fracPart = currentPage - currentPage.floor();
+    
+    // تأثير التمدد عند الانتقال - يتمدد في المنتصف ثم يعود
+    final stretchFactor = fracPart < 0.5 
+        ? fracPart * 2  // يتمدد من 0 إلى 1
+        : (1 - fracPart) * 2; // يتقلص من 1 إلى 0
+    
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
+        gradient: RadialGradient(
+          center: Alignment.center,
+          radius: 1.0,
+          colors: [
+            const Color(0xFFFF3333).withOpacity(0.25 + stretchFactor * 0.1),
+            const Color(0xFFFF3333).withOpacity(0.10 + stretchFactor * 0.05),
+          ],
+        ),
+        border: Border.all(
+          color: const Color(0xFFFF3333).withOpacity(0.15 + stretchFactor * 0.1),
+          width: 0.5,
+        ),
+      ),
+    );
+  }
 }
 
 // ============================================================
-// 🔥 عنصر البار مع انتقال انسيابي كامل
+// 🔥 عنصر داخل البار مع انيميشن انسيابي للسحب
 // ============================================================
 class _NavBarItem extends StatefulWidget {
   final _NavItem item;
-  final double activeAmount; // ✅ من 0.0 إلى 1.0 يتغير بسلاسة مع الإصبع
-  final bool isActive;
+  final int itemIndex;
+  final double currentPage;
   final bool isDark;
   final VoidCallback onTap;
+  final double itemWidth;
 
   const _NavBarItem({
     required this.item,
-    required this.activeAmount,
-    required this.isActive,
+    required this.itemIndex,
+    required this.currentPage,
     required this.isDark,
     required this.onTap,
+    required this.itemWidth,
   });
 
   @override
@@ -265,6 +315,7 @@ class _NavBarItemState extends State<_NavBarItem>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnim;
+  bool _wasActive = false;
 
   @override
   void initState() {
@@ -276,21 +327,30 @@ class _NavBarItemState extends State<_NavBarItem>
     _scaleAnim = Tween<double>(begin: 1.0, end: 1.2).animate(
       CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
     );
+    _wasActive = (widget.currentPage.round() == widget.itemIndex);
   }
 
   @override
   void didUpdateWidget(_NavBarItem old) {
     super.didUpdateWidget(old);
-    // ✅ يطلق انيميشن الـ bounce عند وصول الزر للنشاط الكامل
-    if (widget.isActive && !old.isActive) {
+    final isNowActive = widget.currentPage.round() == widget.itemIndex;
+    if (isNowActive && !_wasActive) {
       _controller.forward(from: 0);
     }
+    _wasActive = isNowActive;
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  // حساب قوة التأثير على كل زر بناءً على موضع الصفحة الحالي
+  double _getActivationStrength() {
+    final distance = (widget.currentPage - widget.itemIndex).abs();
+    if (distance >= 1.0) return 0.0;
+    return 1.0 - distance;
   }
 
   @override
@@ -300,53 +360,45 @@ class _NavBarItemState extends State<_NavBarItem>
         ? Colors.white.withOpacity(0.4)
         : Colors.black.withOpacity(0.4);
 
-    // ✅ اللون يتدرج بسلاسة مع activeAmount
-    final Color resolvedColor =
-        Color.lerp(inactiveColor, activeColor, widget.activeAmount)!;
+    final strength = _getActivationStrength();
+    final isFullyActive = strength > 0.99;
 
-    // ✅ خلفية الزر تتدرج بسلاسة مع activeAmount
-    final Color resolvedBg =
-        activeColor.withOpacity(0.15 * widget.activeAmount);
+    // تدرج اللون بناءً على قوة التأثير
+    final Color resolvedColor = Color.lerp(inactiveColor, activeColor, strength)!;
 
     return Expanded(
       child: GestureDetector(
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          // لا نستخدم AnimatedContainer لأن القيم تتغير من _pageController مباشرة
           margin: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            color: resolvedBg,
-            borderRadius: BorderRadius.circular(32),
-          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               ScaleTransition(
-                scale: widget.isActive
+                scale: isFullyActive
                     ? _scaleAnim
-                    : const AlwaysStoppedAnimation(1.0),
+                    : AlwaysStoppedAnimation(1.0 + strength * 0.15),
                 child: Icon(
-                  // ✅ يتبدل الأيقونة عند تجاوز منتصف المسافة
-                  widget.activeAmount > 0.5
+                  strength > 0.5
                       ? widget.item.activeIcon
                       : widget.item.icon,
                   color: resolvedColor,
-                  size: 21,
+                  size: 21 + strength * 1.5,
                 ),
               ),
               const SizedBox(height: 3),
-              Text(
-                widget.item.label,
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 150),
                 style: TextStyle(
                   fontFamily: 'Tajawal',
                   fontSize: 10,
-                  // ✅ الخط يتغير عند تجاوز منتصف المسافة
-                  fontWeight: widget.activeAmount > 0.5
+                  fontWeight: strength > 0.5
                       ? FontWeight.w600
                       : FontWeight.w400,
                   color: resolvedColor,
                 ),
+                child: Text(widget.item.label),
               ),
             ],
           ),
