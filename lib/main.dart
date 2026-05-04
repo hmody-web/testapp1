@@ -4,11 +4,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 import 'package:vibration/vibration.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 void main() {
-  runApp(MaterialApp(
-    debugShowCheckedModeBanner: false,
-    home: SplashScreen(),
-  ));
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        fontFamily: 'Tajawal', // ✅ الخط الافتراضي للتطبيق كله
+        brightness: Brightness.light,
+      ),
+      darkTheme: ThemeData(
+        fontFamily: 'Tajawal', // ✅ نفس الخط للثيم الداكن
+        brightness: Brightness.dark,
+      ),
+      home: SplashScreen(),
+    ),
+  );
 }
 
 // ============================================================
@@ -800,22 +812,40 @@ class ScriptsPage extends StatelessWidget {
 }
 
 // ============================================================
-// 🔥 صفحة اتصل بنا
+//  صفحة اتصل بنا
 // ============================================================
 class ContactPage extends StatelessWidget {
   final bool isDark;
   const ContactPage({required this.isDark});
+
+  // 🔥 فتح روابط / ايميل
+  Future<void> _openLink(String value, {bool isEmail = false}) async {
+    final Uri uri;
+
+    if (isEmail) {
+      uri = Uri(
+        scheme: 'mailto',
+        path: value,
+        query: Uri.encodeFull('subject=تواصل&body=مرحباً'),
+      );
+    } else {
+      uri = Uri.parse(value);
+    }
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      print("❌ ماكدر أفتح الرابط");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF111111) : Colors.grey[100],
         appBar: AppBar(
-          backgroundColor:
-              isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          backgroundColor: isDark ? const Color(0xFF161616) : Colors.white,
           automaticallyImplyLeading: false,
           title: Text(
             'اتصل بنا',
@@ -826,37 +856,157 @@ class ContactPage extends StatelessWidget {
               color: isDark ? Colors.white : Colors.black,
             ),
           ),
-          bottom: PreferredSize(
+          bottom: const PreferredSize(
             preferredSize: Size.fromHeight(1),
-            child: Container(height: 1, color: Colors.red),
+            child: Divider(height: 1, color: Colors.red),
           ),
         ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        body: Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: const AssetImage("assets/images/bg-contact.png"),
+              repeat: ImageRepeat.repeat,
+              fit: BoxFit.none,
+              colorFilter: isDark
+                  ? null
+                  : const ColorFilter.mode(
+                      Colors.white,
+                      BlendMode.difference,
+                    ),
+            ),
+          ),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
             children: [
-              Icon(Icons.phone_rounded,
-                  size: 80,
-                  color: Colors.blue.withOpacity(0.4)),
-              SizedBox(height: 20),
-              Text(
-                'اتصل بنا',
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black,
+              // 🔥 كرت التعريف
+              Card(
+                color: isDark
+                    ? const Color.fromARGB(255, 19, 19, 19)
+                    : Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  side: const BorderSide(
+                    color: Color.fromARGB(255, 58, 58, 58),
+                    width: 0.5,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(25),
+                  child: Column(
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Transform.translate(
+                            offset: const Offset(35, 0),
+                            child: const CircleAvatar(
+                              radius: 60,
+                              backgroundImage:
+                                  AssetImage("assets/images/profile.png"),
+                            ),
+                          ),
+                          Transform.translate(
+                            offset: const Offset(-35, 0),
+                            child: const CircleAvatar(
+                              radius: 60,
+                              backgroundImage:
+                                  AssetImage("assets/images/icon.png"),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "المطور: محمد السراي",
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "مطور تطبيقات Flutter يهتم بتقديم حلول برمجية حديثة مع واجهات استخدام سلسة.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 16,
+                          color:
+                              isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              SizedBox(height: 10),
-              Text(
-                'تواصل معنا لأي استفسار أو طلب خدمة',
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 15,
-                  color: isDark ? Colors.white54 : Colors.black54,
+
+              const SizedBox(height: 16),
+
+              // 🔥 الإيميل
+              _buildCard(
+                isDark,
+                icon: const Icon(Icons.email, color: Colors.red),
+                title: "البريد الإلكتروني",
+                subtitle: "info@scrptaty.com",
+                onTap: () =>
+                    _openLink("info@scrptaty.com", isEmail: true),
+              ),
+
+              // 🔥 الموقع
+              _buildCard(
+                isDark,
+                icon: const Icon(Icons.language, color: Colors.blue),
+                title: "الموقع الإلكتروني",
+                subtitle: "https://scrptaty.com",
+                onTap: () => _openLink("https://scrptaty.com"),
+              ),
+
+              // 🔥 انستكرام
+               _buildCard(
+                isDark,
+                icon: ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [
+                      Color(0xFFF58529),
+                      Color(0xFFFEDA77),
+                      Color(0xFFDD2A7B),
+                      Color(0xFF8134AF),
+                      Color(0xFF515BD4),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ).createShader(bounds),
+                  child: const Icon(
+                    FontAwesomeIcons.instagram,
+                    size: 24,
+                    color: Colors.white,
+                  ),
                 ),
-                textAlign: TextAlign.center,
+                title: "إنستكرام",
+                subtitle: "@Eng.mu7med",
+                onTap: () =>
+                    _openLink("https://instagram.com/Eng.mu7med"),
+              ),
+
+              // 🔥 تلغرام
+              _buildCard(
+                isDark,
+                icon: const Icon(Icons.send, color: Colors.blueAccent),
+                title: "تلكرام",
+                subtitle: "@Mooo5",
+                onTap: () => _openLink("https://t.me/Mooo5"),
+              ),
+
+              // 🔥 واتساب
+              _buildCard(
+                isDark,
+                icon: const Icon(FontAwesomeIcons.whatsapp,
+                    color: Colors.green),
+                title: "واتساب",
+                subtitle: "+964 772 653 7514",
+                onTap: () =>
+                    _openLink("https://wa.me/9647726537514"),
               ),
             ],
           ),
@@ -864,8 +1014,65 @@ class ContactPage extends StatelessWidget {
       ),
     );
   }
-}
 
+  // 🔥 الكرت مع تأثير الضغط
+    // 🔥 الكرت (عدلناه يستقبل Widget)
+  Widget _buildCard(
+    bool isDark, {
+    required Widget icon, // 🔥 مهم
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onTap,
+          splashColor: Colors.red.withOpacity(0.3),
+          highlightColor: Colors.red.withOpacity(0.1),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color.fromARGB(223, 19, 19, 19)
+                  : const Color.fromARGB(160, 255, 255, 255),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: const Color.fromARGB(255, 58, 58, 58),
+                width: 0.5,
+              ),
+            ),
+            child: ListTile(
+              leading: icon,
+              title: Text(
+                title,
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              subtitle: Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text(
+                  subtitle,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    color:
+                        isDark ? const Color.fromARGB(82, 255, 255, 255) : Colors.black54,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 // ============================================================
 // 🔥 صفحة الإعدادات
 // ============================================================
