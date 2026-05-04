@@ -75,7 +75,9 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _currentIndex = 0;
+  // ✅ قيمة مستمرة double بدل int + int + double
+  // تتحرك مع إصبع المستخدم: 0.0 → 1.0 → 2.0 → 3.0
+  double _activePage = 0.0;
   late final PageController _pageController;
 
   final List<_NavItem> _items = [
@@ -105,6 +107,16 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
+
+    // ✅ نتابع _pageController.page مباشرة
+    // يُعطي قيمة مثل 1.47 أثناء السحب → تصبح _activePage مباشرةً
+    _pageController.addListener(() {
+      if (!_pageController.hasClients) return;
+      final page = _pageController.page;
+      if (page != null) {
+        setState(() => _activePage = page);
+      }
+    });
   }
 
   @override
@@ -114,7 +126,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onTabTap(int index) {
-    setState(() => _currentIndex = index);
+    setState(() => _activePage = index.toDouble());
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 400),
@@ -127,10 +139,10 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       backgroundColor:
           widget.isDark ? const Color(0xFF111111) : Colors.white,
-      extendBody: true, // 🔥 مهم جداً لجعل الصفحات تمتد خلف البار
+      extendBody: true,
       body: PageView(
         controller: _pageController,
-        onPageChanged: (i) => setState(() => _currentIndex = i),
+        onPageChanged: (i) => setState(() => _activePage = i.toDouble()),
         children: [
           HomePage(isDark: widget.isDark, onToggle: widget.onToggle),
           ScriptsPage(isDark: widget.isDark),
@@ -138,8 +150,9 @@ class _MainShellState extends State<MainShell> {
           SettingsPage(isDark: widget.isDark),
         ],
       ),
+      // ✅ نمرر activePage فقط بدل ثلاث قيم منفصلة
       bottomNavigationBar: _GlassNavBar(
-        currentIndex: _currentIndex,
+        activePage: _activePage,
         items: _items,
         isDark: widget.isDark,
         onTap: _onTabTap,
@@ -163,16 +176,16 @@ class _NavItem {
 }
 
 // ============================================================
-// 🔥 البار الزجاجي الاحترافي
+// 🔥 البار الزجاجي الاحترافي مع انتقال انسيابي
 // ============================================================
 class _GlassNavBar extends StatelessWidget {
-  final int currentIndex;
+  final double activePage; // ✅ قيمة مستمرة 0.0 ← 1.0 ← 2.0 ← 3.0
   final List<_NavItem> items;
   final bool isDark;
   final ValueChanged<int> onTap;
 
   const _GlassNavBar({
-    required this.currentIndex,
+    required this.activePage,
     required this.items,
     required this.isDark,
     required this.onTap,
@@ -182,42 +195,41 @@ class _GlassNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(40),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
             child: Container(
-              height: 68,
+              height: 56,
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.06),
+                color: Colors.transparent,
                 borderRadius: BorderRadius.circular(40),
                 border: Border.all(
                   color: isDark
-                      ? Colors.white.withOpacity(0.12)
-                      : Colors.black.withOpacity(0.08),
+                      ? Colors.white.withOpacity(0.18)
+                      : Colors.black.withOpacity(0.10),
                   width: 0.5,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 30,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
               ),
               child: Row(
-                children: List.generate(
-                  items.length,
-                  (i) => _NavBarItem(
+                children: List.generate(items.length, (i) {
+                  // ✅ نحسب "كمية النشاط" لكل زر بناءً على المسافة من activePage
+                  // distance = 0.0 → الزر نشط تماماً (activeAmount = 1.0)
+                  // distance = 1.0 → الزر بعيد تماماً (activeAmount = 0.0)
+                  final distance =
+                      (activePage - i).abs().clamp(0.0, 1.0);
+                  final activeAmount = 1.0 - distance;
+                  final isExactlyActive = (activePage - i).abs() < 0.01;
+
+                  return _NavBarItem(
                     item: items[i],
-                    isActive: currentIndex == i,
+                    activeAmount: activeAmount,
+                    isActive: isExactlyActive,
                     isDark: isDark,
                     onTap: () => onTap(i),
-                  ),
-                ),
+                  );
+                }),
               ),
             ),
           ),
@@ -228,16 +240,18 @@ class _GlassNavBar extends StatelessWidget {
 }
 
 // ============================================================
-// 🔥 عنصر داخل البار مع انيميشن
+// 🔥 عنصر البار مع انتقال انسيابي كامل
 // ============================================================
 class _NavBarItem extends StatefulWidget {
   final _NavItem item;
+  final double activeAmount; // ✅ من 0.0 إلى 1.0 يتغير بسلاسة مع الإصبع
   final bool isActive;
   final bool isDark;
   final VoidCallback onTap;
 
   const _NavBarItem({
     required this.item,
+    required this.activeAmount,
     required this.isActive,
     required this.isDark,
     required this.onTap,
@@ -267,6 +281,7 @@ class _NavBarItemState extends State<_NavBarItem>
   @override
   void didUpdateWidget(_NavBarItem old) {
     super.didUpdateWidget(old);
+    // ✅ يطلق انيميشن الـ bounce عند وصول الزر للنشاط الكامل
     if (widget.isActive && !old.isActive) {
       _controller.forward(from: 0);
     }
@@ -280,23 +295,28 @@ class _NavBarItemState extends State<_NavBarItem>
 
   @override
   Widget build(BuildContext context) {
-    final activeColor = const Color(0xFFFF3333);
+    const activeColor = Color(0xFFFF3333);
     final inactiveColor = widget.isDark
         ? Colors.white.withOpacity(0.4)
         : Colors.black.withOpacity(0.4);
+
+    // ✅ اللون يتدرج بسلاسة مع activeAmount
+    final Color resolvedColor =
+        Color.lerp(inactiveColor, activeColor, widget.activeAmount)!;
+
+    // ✅ خلفية الزر تتدرج بسلاسة مع activeAmount
+    final Color resolvedBg =
+        activeColor.withOpacity(0.15 * widget.activeAmount);
 
     return Expanded(
       child: GestureDetector(
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          margin: const EdgeInsets.all(6),
+        child: Container(
+          // لا نستخدم AnimatedContainer لأن القيم تتغير من _pageController مباشرة
+          margin: const EdgeInsets.all(5),
           decoration: BoxDecoration(
-            color: widget.isActive
-                ? activeColor.withOpacity(0.15)
-                : Colors.transparent,
+            color: resolvedBg,
             borderRadius: BorderRadius.circular(32),
           ),
           child: Column(
@@ -307,26 +327,26 @@ class _NavBarItemState extends State<_NavBarItem>
                     ? _scaleAnim
                     : const AlwaysStoppedAnimation(1.0),
                 child: Icon(
-                  widget.isActive
+                  // ✅ يتبدل الأيقونة عند تجاوز منتصف المسافة
+                  widget.activeAmount > 0.5
                       ? widget.item.activeIcon
                       : widget.item.icon,
-                  color:
-                      widget.isActive ? activeColor : inactiveColor,
-                  size: 22,
+                  color: resolvedColor,
+                  size: 21,
                 ),
               ),
-              const SizedBox(height: 4),
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 300),
+              const SizedBox(height: 3),
+              Text(
+                widget.item.label,
                 style: TextStyle(
                   fontFamily: 'Tajawal',
                   fontSize: 10,
-                  fontWeight: widget.isActive
+                  // ✅ الخط يتغير عند تجاوز منتصف المسافة
+                  fontWeight: widget.activeAmount > 0.5
                       ? FontWeight.w600
                       : FontWeight.w400,
-                  color: widget.isActive ? activeColor : inactiveColor,
+                  color: resolvedColor,
                 ),
-                child: Text(widget.item.label),
               ),
             ],
           ),
