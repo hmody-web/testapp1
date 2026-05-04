@@ -11,7 +11,9 @@ void main() {
   ));
 }
 
-// 🔥 Stateful للتحكم بالثيم + حفظه
+// ============================================================
+// 🔥 MyApp - Stateful للتحكم بالثيم + حفظه
+// ============================================================
 class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => _MyAppState();
@@ -33,19 +35,17 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-void toggleTheme() async {
-  final prefs = await SharedPreferences.getInstance();
-  setState(() {
-    isDark = !isDark;
-    prefs.setBool("theme", isDark);
-  });
+  void toggleTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isDark = !isDark;
+      prefs.setBool("theme", isDark);
+    });
 
-  // ✅ اهتزاز عند التبديل
-  if (await Vibration.hasVibrator() ?? false) {
-    Vibration.vibrate(duration: 100); // يهتز 100ms
+    if (await Vibration.hasVibrator() ?? false) {
+      Vibration.vibrate(duration: 100);
+    }
   }
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +54,7 @@ void toggleTheme() async {
       theme: ThemeData.light(),
       darkTheme: ThemeData.dark(),
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-      home: HomePage(
+      home: MainShell(
         isDark: isDark,
         onToggle: toggleTheme,
       ),
@@ -62,6 +62,283 @@ void toggleTheme() async {
   }
 }
 
+// ============================================================
+// 🔥 MainShell - الصفحة الرئيسية مع البار السفلي الزجاجي
+// ============================================================
+class MainShell extends StatefulWidget {
+  final bool isDark;
+  final VoidCallback onToggle;
+  const MainShell({required this.isDark, required this.onToggle});
+
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
+  int _currentIndex = 0;
+  late final PageController _pageController;
+
+  final List<_NavItem> _items = [
+    _NavItem(
+      icon: Icons.home_outlined,
+      activeIcon: Icons.home_rounded,
+      label: 'الرئيسية',
+    ),
+    _NavItem(
+      icon: Icons.bolt_outlined,
+      activeIcon: Icons.bolt_rounded,
+      label: 'سكربتات',
+    ),
+    _NavItem(
+      icon: Icons.phone_outlined,
+      activeIcon: Icons.phone_rounded,
+      label: 'اتصل بنا',
+    ),
+    _NavItem(
+      icon: Icons.settings_outlined,
+      activeIcon: Icons.settings_rounded,
+      label: 'الإعدادات',
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _onTabTap(int index) {
+    setState(() => _currentIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor:
+          widget.isDark ? const Color(0xFF111111) : Colors.white,
+      extendBody: true, // 🔥 مهم جداً لجعل الصفحات تمتد خلف البار
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        children: [
+          HomePage(isDark: widget.isDark, onToggle: widget.onToggle),
+          ScriptsPage(isDark: widget.isDark),
+          ContactPage(isDark: widget.isDark),
+          SettingsPage(isDark: widget.isDark),
+        ],
+      ),
+      bottomNavigationBar: _GlassNavBar(
+        currentIndex: _currentIndex,
+        items: _items,
+        isDark: widget.isDark,
+        onTap: _onTabTap,
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔥 _NavItem - موديل عنصر البار
+// ============================================================
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
+}
+
+// ============================================================
+// 🔥 البار الزجاجي الاحترافي
+// ============================================================
+class _GlassNavBar extends StatelessWidget {
+  final int currentIndex;
+  final List<_NavItem> items;
+  final bool isDark;
+  final ValueChanged<int> onTap;
+
+  const _GlassNavBar({
+    required this.currentIndex,
+    required this.items,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+              height: 68,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withOpacity(0.08)
+                    : Colors.black.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(40),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.12)
+                      : Colors.black.withOpacity(0.08),
+                  width: 0.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 30,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: List.generate(
+                  items.length,
+                  (i) => _NavBarItem(
+                    item: items[i],
+                    isActive: currentIndex == i,
+                    isDark: isDark,
+                    onTap: () => onTap(i),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔥 عنصر داخل البار مع انيميشن
+// ============================================================
+class _NavBarItem extends StatefulWidget {
+  final _NavItem item;
+  final bool isActive;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _NavBarItem({
+    required this.item,
+    required this.isActive,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  State<_NavBarItem> createState() => _NavBarItemState();
+}
+
+class _NavBarItemState extends State<_NavBarItem>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_NavBarItem old) {
+    super.didUpdateWidget(old);
+    if (widget.isActive && !old.isActive) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColor = const Color(0xFFFF3333);
+    final inactiveColor = widget.isDark
+        ? Colors.white.withOpacity(0.4)
+        : Colors.black.withOpacity(0.4);
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          margin: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: widget.isActive
+                ? activeColor.withOpacity(0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(32),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ScaleTransition(
+                scale: widget.isActive
+                    ? _scaleAnim
+                    : const AlwaysStoppedAnimation(1.0),
+                child: Icon(
+                  widget.isActive
+                      ? widget.item.activeIcon
+                      : widget.item.icon,
+                  color:
+                      widget.isActive ? activeColor : inactiveColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(height: 4),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 300),
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 10,
+                  fontWeight: widget.isActive
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                  color: widget.isActive ? activeColor : inactiveColor,
+                ),
+                child: Text(widget.item.label),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔥 HomePage - الصفحة الرئيسية
+// ============================================================
 class HomePage extends StatelessWidget {
   final bool isDark;
   final VoidCallback onToggle;
@@ -88,7 +365,6 @@ class HomePage extends StatelessWidget {
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-
             // 🔴 السويتش
             Transform.scale(
               scale: 0.8,
@@ -102,31 +378,30 @@ class HomePage extends StatelessWidget {
             // 🔵 اللوجو + النص
             Row(
               children: [
-Text(
-  "سكربتاتي",
-  style: TextStyle(
-    fontFamily: "Tajawal",
-    fontSize: 24,
-    color: isDark ? Colors.white : Colors.red, // ✅ أحمر بدل الأسود
-  ),
-),
-
+                Text(
+                  "سكربتاتي",
+                  style: TextStyle(
+                    fontFamily: "Tajawal",
+                    fontSize: 24,
+                    color: isDark ? Colors.white : Colors.red,
+                  ),
+                ),
                 SizedBox(width: 10),
                 Transform.translate(
                   offset: Offset(0, -2),
                   child: ColorFiltered(
-  colorFilter: isDark
-      ? ColorFilter.mode(Colors.transparent, BlendMode.dst) // داكن → طبيعي
-      : ColorFilter.mode(Colors.red, BlendMode.srcIn),      // فاتح → أحمر
-  child: Image.asset(
-    "assets/images/logo.png",
-    height: 35,
-    errorBuilder: (c, e, s) {
-      return Icon(Icons.image_not_supported);
-    },
-  ),
-),
-
+                    colorFilter: isDark
+                        ? ColorFilter.mode(
+                            Colors.transparent, BlendMode.dst)
+                        : ColorFilter.mode(Colors.red, BlendMode.srcIn),
+                    child: Image.asset(
+                      "assets/images/logo.png",
+                      height: 35,
+                      errorBuilder: (c, e, s) {
+                        return Icon(Icons.image_not_supported);
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -214,9 +489,12 @@ Text(
                 padding: EdgeInsets.symmetric(horizontal: 15),
                 child: Row(
                   children: [
-                    _card(context, Icons.storage, "استضافة\nالمواقع", HostingPage(), isDark),
-                    _card(context, Icons.shopping_cart, "متاجر\nالكترونية", StorePage(), isDark),
-                    _card(context, Icons.phone_android, "تطبيقات\nالموبايل", AppsPage(), isDark),
+                    _card(context, Icons.storage, "استضافة\nالمواقع",
+                        HostingPage(), isDark),
+                    _card(context, Icons.shopping_cart, "متاجر\nالكترونية",
+                        StorePage(), isDark),
+                    _card(context, Icons.phone_android, "تطبيقات\nالموبايل",
+                        AppsPage(), isDark),
                   ],
                 ),
               ),
@@ -227,7 +505,8 @@ Text(
             // 🔥 البروفايل
             Container(
               margin: EdgeInsets.symmetric(horizontal: 15),
-              padding: EdgeInsets.symmetric(vertical: 25, horizontal: 20),
+              padding:
+                  EdgeInsets.symmetric(vertical: 25, horizontal: 20),
               decoration: BoxDecoration(
                 color: isDark
                     ? Color.fromARGB(3, 255, 255, 255)
@@ -236,7 +515,6 @@ Text(
               ),
               child: Column(
                 children: [
-
                   Container(
                     padding: EdgeInsets.all(3),
                     decoration: BoxDecoration(
@@ -255,9 +533,7 @@ Text(
                       ),
                     ),
                   ),
-
                   SizedBox(height: 15),
-
                   Text(
                     "محمد السراي",
                     style: TextStyle(
@@ -267,9 +543,7 @@ Text(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   SizedBox(height: 10),
-
                   Text(
                     "مطور ويب محترف مع خبرة في تطوير المواقع والتطبيقات.",
                     textAlign: TextAlign.center,
@@ -316,20 +590,224 @@ Text(
                 );
               }),
             ),
+
+            // مسافة إضافية لأسفل لعدم تغطية البار للمحتوى
+            SizedBox(height: 90),
           ],
         ),
       ),
     );
   }
 
-  // 🔥 كرت
-  Widget _card(BuildContext context, IconData icon, String text, Widget page, bool isDark) {
+  Widget _card(BuildContext context, IconData icon, String text,
+      Widget page, bool isDark) {
     return Expanded(
       child: _HoverCard(
         icon: icon,
         text: text,
         page: page,
         isDark: isDark,
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔥 صفحة السكربتات
+// ============================================================
+class ScriptsPage extends StatelessWidget {
+  final bool isDark;
+  const ScriptsPage({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor:
+            isDark ? const Color(0xFF111111) : Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor:
+              isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          automaticallyImplyLeading: false,
+          title: Text(
+            'السكربتات',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          bottom: PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Container(height: 1, color: Colors.red),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.bolt_rounded,
+                  size: 80,
+                  color: Colors.red.withOpacity(0.4)),
+              SizedBox(height: 20),
+              Text(
+                'السكربتات',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              SizedBox(height: 10),
+              Text(
+                'ستظهر هنا جميع السكربتات والمشاريع المميزة',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  color: isDark ? Colors.white54 : Colors.black54,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔥 صفحة اتصل بنا
+// ============================================================
+class ContactPage extends StatelessWidget {
+  final bool isDark;
+  const ContactPage({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor:
+            isDark ? const Color(0xFF111111) : Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor:
+              isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          automaticallyImplyLeading: false,
+          title: Text(
+            'اتصل بنا',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          bottom: PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Container(height: 1, color: Colors.red),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.phone_rounded,
+                  size: 80,
+                  color: Colors.blue.withOpacity(0.4)),
+              SizedBox(height: 20),
+              Text(
+                'اتصل بنا',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              SizedBox(height: 10),
+              Text(
+                'تواصل معنا لأي استفسار أو طلب خدمة',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  color: isDark ? Colors.white54 : Colors.black54,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔥 صفحة الإعدادات
+// ============================================================
+class SettingsPage extends StatelessWidget {
+  final bool isDark;
+  const SettingsPage({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor:
+            isDark ? const Color(0xFF111111) : Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor:
+              isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          automaticallyImplyLeading: false,
+          title: Text(
+            'الإعدادات',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          bottom: PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Container(height: 1, color: Colors.red),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.settings_rounded,
+                  size: 80,
+                  color: Colors.grey.withOpacity(0.4)),
+              SizedBox(height: 20),
+              Text(
+                'الإعدادات',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              SizedBox(height: 10),
+              Text(
+                'تحكم في إعدادات التطبيق والتفضيلات الشخصية',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  color: isDark ? Colors.white54 : Colors.black54,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -357,7 +835,7 @@ class _HoverCard extends StatefulWidget {
 
 class _HoverCardState extends State<_HoverCard> {
   bool isHovered = false;
-  bool isPressed = false; // ✅ حالة الضغط
+  bool isPressed = false;
 
   @override
   Widget build(BuildContext context) {
@@ -366,9 +844,9 @@ class _HoverCardState extends State<_HoverCard> {
       onExit: (_) => setState(() => isHovered = false),
 
       child: GestureDetector(
-        onTapDown: (_) => setState(() => isPressed = true),   // ✅ عند بداية الضغط
-        onTapUp: (_) => setState(() => isPressed = false),    // ✅ عند رفع الإصبع
-        onTapCancel: () => setState(() => isPressed = false), // ✅ إذا ألغي الضغط
+        onTapDown: (_) => setState(() => isPressed = true),
+        onTapUp: (_) => setState(() => isPressed = false),
+        onTapCancel: () => setState(() => isPressed = false),
         onTap: () {
           Navigator.push(
             context,
@@ -382,11 +860,13 @@ class _HoverCardState extends State<_HoverCard> {
           padding: EdgeInsets.symmetric(vertical: 20),
           decoration: BoxDecoration(
             color: isPressed
-                ? Colors.red.withOpacity(0.4) // ✅ لون مختلف عند الضغط
+                ? Colors.red.withOpacity(0.4)
                 : isHovered
                     ? (widget.isDark
-                        ? const Color.fromARGB(255, 212, 42, 42).withOpacity(0.7)
-                        : const Color.fromARGB(255, 212, 42, 42).withOpacity(0.2))
+                        ? const Color.fromARGB(255, 212, 42, 42)
+                            .withOpacity(0.7)
+                        : const Color.fromARGB(255, 212, 42, 42)
+                            .withOpacity(0.2))
                     : (widget.isDark
                         ? Color(0xFF1E1E1E)
                         : Colors.white),
@@ -412,7 +892,6 @@ class _HoverCardState extends State<_HoverCard> {
   }
 }
 
-
 // ============================================================
 // 🔥 Notifier مشترك لتمرير قيمة السحب للـ Route
 // ============================================================
@@ -420,7 +899,6 @@ final _globalDragNotifier = ValueNotifier<double>(0);
 
 // ============================================================
 // 🔥 Route مخصص: الصفحة تدخل من اليسار
-//    الصفحة الخلفية تتحرك معها عند السحب
 // ============================================================
 class _SlideFromLeftRoute extends PageRouteBuilder {
   final Widget page;
@@ -442,7 +920,6 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
               curve: Curves.easeInOut,
             ));
 
-            // الصفحة الخلفية تتحرك 30% من سحب الأمامية
             return ValueListenableBuilder<double>(
               valueListenable: _globalDragNotifier,
               builder: (_, drag, __) {
@@ -464,7 +941,6 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
 
 // ============================================================
 // 🔥 Wrapper يدعم السحب من اليمين لليسار للإغلاق
-//    ويُحدّث _globalDragNotifier لتحريك الصفحة الخلفية معها
 // ============================================================
 class _SwipeToCloseWrapper extends StatefulWidget {
   final Widget child;
@@ -501,7 +977,6 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
         final delta = details.globalPosition.dx - _dragStartX;
         if (delta < 0) {
           setState(() => _dragOffset = delta);
-          // أخبر الـ Route بقيمة السحب لتحريك الخلفية
           _globalDragNotifier.value = delta;
         }
       },
@@ -530,33 +1005,34 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
 }
 
 // ============================================================
-// 🔥 الصفحات
+// 🔥 صفحات الكروت الداخلية (استضافة، متاجر، تطبيقات)
 // ============================================================
 class HostingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _page(context, "استضافة المواقع", "تفاصيل الاستضافة...");
+    return _innerPage(context, "استضافة المواقع", "تفاصيل الاستضافة...");
   }
 }
 
 class StorePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _page(context, "متاجر الكترونية", "تفاصيل المتاجر...");
+    return _innerPage(context, "متاجر الكترونية", "تفاصيل المتاجر...");
   }
 }
 
 class AppsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _page(context, "تطبيقات الموبايل", "تفاصيل التطبيقات...");
+    return _innerPage(
+        context, "تطبيقات الموبايل", "تفاصيل التطبيقات...");
   }
 }
 
 // ============================================================
-// 🔥 صفحة داخلية
+// 🔥 صفحة داخلية مشتركة للكروت
 // ============================================================
-Widget _page(BuildContext context, String title, String text) {
+Widget _innerPage(BuildContext context, String title, String text) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
 
   return Directionality(
@@ -565,9 +1041,8 @@ Widget _page(BuildContext context, String title, String text) {
       backgroundColor: isDark ? Color(0xFF121212) : Colors.grey[100],
 
       appBar: AppBar(
-        backgroundColor: isDark
-            ? Color.fromARGB(255, 22, 22, 22)
-            : Colors.white,
+        backgroundColor:
+            isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
         elevation: 2,
         automaticallyImplyLeading: false,
 
@@ -642,12 +1117,10 @@ class ClickableImage extends StatelessWidget {
             barrierColor: Colors.transparent,
             transitionDuration: Duration(milliseconds: 100),
             reverseTransitionDuration: Duration(milliseconds: 100),
-            pageBuilder: (_, __, ___) => ImageViewer(imagePath: imagePath),
+            pageBuilder: (_, __, ___) =>
+                ImageViewer(imagePath: imagePath),
             transitionsBuilder: (_, animation, __, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
+              return FadeTransition(opacity: animation, child: child);
             },
           ),
         );
@@ -667,7 +1140,6 @@ class ClickableImage extends StatelessWidget {
 // ============================================================
 class ImageViewer extends StatefulWidget {
   final String imagePath;
-
   const ImageViewer({required this.imagePath});
 
   @override
@@ -676,7 +1148,6 @@ class ImageViewer extends StatefulWidget {
 
 class _ImageViewerState extends State<ImageViewer>
     with SingleTickerProviderStateMixin {
-
   double offsetY = 0;
   double scale = 1.0;
 
@@ -727,14 +1198,15 @@ class _ImageViewerState extends State<ImageViewer>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-
           // 🔥 الخلفية
           GestureDetector(
             onTap: close,
             child: BackdropFilter(
               filter: ImageFilter.blur(
-                sigmaX: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
-                sigmaY: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+                sigmaX:
+                    20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+                sigmaY:
+                    20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
               ),
               child: Container(
                 color: Colors.black.withOpacity(0.3),
@@ -793,16 +1265,15 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-
   late AnimationController controller;
   late Animation<double> scaleAnimation;
   late Animation<double> fadeAnimation;
-  bool isDark = true; // ✅ حالة الثيم
+  bool isDark = true;
 
   @override
   void initState() {
     super.initState();
-    loadTheme(); // ✅ تحميل الثيم
+    loadTheme();
 
     controller = AnimationController(
       vsync: this,
@@ -840,7 +1311,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: isDark ? Color(0xFF121212) : Colors.white, // ✅ خلفية حسب الثيم
+      backgroundColor: isDark ? Color(0xFF121212) : Colors.white,
       body: Center(
         child: AnimatedBuilder(
           animation: controller,
@@ -853,16 +1324,15 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             );
           },
-child: ColorFiltered(
-  colorFilter: isDark
-      ? ColorFilter.mode(Colors.transparent, BlendMode.dst) // داكن → اللوجو طبيعي
-      : ColorFilter.mode(Colors.red, BlendMode.srcIn),      // فاتح → اللوجو أحمر
-  child: Image.asset(
-    "assets/images/logo.png",
-    width: 120,
-  ),
-),
-
+          child: ColorFiltered(
+            colorFilter: isDark
+                ? ColorFilter.mode(Colors.transparent, BlendMode.dst)
+                : ColorFilter.mode(Colors.red, BlendMode.srcIn),
+            child: Image.asset(
+              "assets/images/logo.png",
+              width: 120,
+            ),
+          ),
         ),
       ),
     );
