@@ -198,60 +198,77 @@ class _GlassNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
+        bottom: false, // يخلي البار ينزل تحت
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(40),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-            child: Container(
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(40),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.18)
-                      : Colors.black.withOpacity(0.10),
-                  width: 0.5,
+child: GestureDetector(
+  onHorizontalDragEnd: (details) {
+    if (details.primaryVelocity! < 0) {
+      // سحب لليسار → صفحة تالية
+      if (currentIndex < items.length - 1) {
+        onTap(currentIndex + 1);
+      }
+    } else if (details.primaryVelocity! > 0) {
+      // سحب لليمين → صفحة سابقة
+      if (currentIndex > 0) {
+        onTap(currentIndex - 1);
+      }
+    }
+  },
+  child: Container(
+    height: 56,
+    decoration: BoxDecoration(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(40),
+      border: Border.all(
+        color: isDark
+            ? Colors.white.withOpacity(0.18)
+            : Colors.black.withOpacity(0.10),
+        width: 0.5,
+      ),
+    ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = constraints.maxWidth / items.length;
+        
+        return Stack(
+          children: [
+            // 🔥 التأثير الأحمر المتحرك بسلاسة
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              left: currentIndex * itemWidth + 5,
+              top: 5,
+              bottom: 5,
+              width: itemWidth - 10,
+              child: _buildMovingIndicator(),
+            ),
+
+            // 🔥 الأزرار
+            Row(
+              children: List.generate(
+                items.length,
+                (i) => _NavBarItem(
+                  item: items[i],
+                  itemIndex: i,
+                  currentPage: currentPage,
+                  isDark: isDark,
+                  onTap: () => onTap(i),
+                  itemWidth: itemWidth,
                 ),
               ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final itemWidth = constraints.maxWidth / items.length;
-                  
-                  return Stack(
-                    children: [
-                      // 🔥 التأثير الأحمر المتحرك بسلاسة
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 0),
-                        curve: Curves.easeInOut,
-                        left: currentPage * itemWidth + 5,
-                        top: 5,
-                        bottom: 5,
-                        width: itemWidth - 10,
-                        child: _buildMovingIndicator(),
-                      ),
-                      
-                      // 🔥 الأزرار
-                      Row(
-                        children: List.generate(
-                          items.length,
-                          (i) => _NavBarItem(
-                            item: items[i],
-                            itemIndex: i,
-                            currentPage: currentPage,
-                            isDark: isDark,
-                            onTap: () => onTap(i),
-                            itemWidth: itemWidth,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
             ),
+          ],
+        );
+      },
+    ),
+  ),
+),
+
           ),
         ),
       ),
@@ -482,8 +499,10 @@ class HomePage extends StatelessWidget {
       ),
 
       body: SingleChildScrollView(
-        physics: ClampingScrollPhysics(),
-        child: Column(
+           physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+            child: Column(
           children: [
 
             // 🔥 الهيدر
