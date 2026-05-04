@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 import 'package:vibration/vibration.dart';
-
+import 'package:audioplayers/audioplayers.dart';
 void main() {
   runApp(MaterialApp(
     debugShowCheckedModeBanner: false,
@@ -1378,6 +1378,8 @@ class _ImageViewerState extends State<ImageViewer>
 // ============================================================
 // 🔥 SplashScreen
 // ============================================================
+
+
 class SplashScreen extends StatefulWidget {
   @override
   _SplashScreenState createState() => _SplashScreenState();
@@ -1389,11 +1391,15 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> scaleAnimation;
   late Animation<double> fadeAnimation;
   bool isDark = true;
+  final player = AudioPlayer(); // ✅ مشغل الصوت
 
   @override
   void initState() {
     super.initState();
     loadTheme();
+
+    // ✅ تشغيل الصوت عند بداية السبلاش
+    player.play(AssetSource("sounds/start.mp3"));
 
     controller = AnimationController(
       vsync: this,
@@ -1426,6 +1432,13 @@ class _SplashScreenState extends State<SplashScreen>
     setState(() {
       isDark = prefs.getBool("theme") ?? true;
     });
+  }
+
+  @override
+  void dispose() {
+    player.dispose(); // ✅ تنظيف مشغل الصوت
+    controller.dispose();
+    super.dispose();
   }
 
   @override
