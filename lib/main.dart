@@ -1521,7 +1521,7 @@ class _HomePageState extends State<HomePage>
         );
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
           borderRadius: BorderRadius.circular(18),
@@ -1571,14 +1571,17 @@ class _HomePageState extends State<HomePage>
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   if (post.title.isNotEmpty)
-                    Text(
-                      post.title,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        post.title,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
                       ),
                     ),
                   if (post.title.isNotEmpty && post.description.isNotEmpty)
@@ -1695,13 +1698,17 @@ class PostDetailsPage extends StatelessWidget {
         appBar: AppBar(
           backgroundColor:
               isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
-          title: Text(
-            post.title.isNotEmpty ? post.title : 'تفاصيل المنشور',
-            style: TextStyle(
-              fontFamily: 'Tajawal',
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black,
+          title: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              post.title.isNotEmpty ? post.title : 'تفاصيل المنشور',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
             ),
           ),
           bottom: const PreferredSize(
