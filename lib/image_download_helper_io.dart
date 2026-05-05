@@ -22,7 +22,13 @@ Future<String?> downloadNetworkImageImpl(
   directory ??= await getApplicationDocumentsDirectory();
 
   final resolvedFileName = _resolveFileName(imageUrl, fileName);
-  final file = File('${directory.path}${Platform.pathSeparator}$resolvedFileName');
+  final safeFileName = resolvedFileName.replaceAll(RegExp(r'[<>:"\\/\|\?\*]'), '_');
+
+  if (!await directory.exists()) {
+    await directory.create(recursive: true);
+  }
+
+  final file = File('${directory.path}${Platform.pathSeparator}$safeFileName');
   await file.writeAsBytes(response.bodyBytes, flush: true);
   return file.path;
 }

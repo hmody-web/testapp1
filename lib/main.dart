@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:vibration/vibration.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -686,6 +687,15 @@ class PostItem {
     required this.imageUrl,
   });
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'image_url': imageUrl,
+    };
+  }
+
   String get encodedImageUrl => Uri.encodeFull(imageUrl);
 
   static String _readString(Map<String, dynamic> json, List<String> keys) {
@@ -731,6 +741,8 @@ String stripHtmlTags(String htmlText) {
       .trim();
 }
 
+const String _viewedPostsStorageKey = 'viewed_posts';
+
 Future<List<PostItem>> fetchPosts() async {
   final response =
       await http.get(Uri.parse('https://scrptaty.com/posts/get_posts.php'));
@@ -764,6 +776,57 @@ Future<List<PostItem>> fetchPosts() async {
           post.description.isNotEmpty ||
           post.imageUrl.isNotEmpty)
       .toList();
+}
+
+Future<List<PostItem>> loadViewedPosts() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_viewedPostsStorageKey);
+    if (saved == null || saved.isEmpty) {
+      return [];
+    }
+
+    final decoded = jsonDecode(saved);
+    if (decoded is! List) {
+      return [];
+    }
+
+    return decoded
+        .whereType<Map>()
+        .map((item) => PostItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  } catch (_) {
+    return [];
+  }
+}
+
+Future<void> markPostAsViewed(PostItem post) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_viewedPostsStorageKey);
+    final currentPosts = <PostItem>[];
+
+    if (saved != null && saved.isNotEmpty) {
+      final decoded = jsonDecode(saved);
+      if (decoded is List) {
+        currentPosts.addAll(decoded
+            .whereType<Map>()
+            .map((item) => PostItem.fromJson(Map<String, dynamic>.from(item))));
+      }
+    }
+
+    final updatedPosts = [post, ...currentPosts.where((item) => item.id != post.id)];
+    final trimmedPosts = updatedPosts.length > 50
+        ? updatedPosts.sublist(0, 50)
+        : updatedPosts;
+
+    await prefs.setString(
+      _viewedPostsStorageKey,
+      jsonEncode(trimmedPosts.map((item) => item.toJson()).toList()),
+    );
+  } catch (_) {
+    // Ignore cache write failures.
+  }
 }
 
 class PostNotificationMonitor {
@@ -861,257 +924,495 @@ class PostNotificationMonitor {
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggle;
-  final Future<List<PostItem>> _postsFuture = fetchPosts();
 
-  HomePage({required this.isDark, required this.onToggle});
+  const HomePage({required this.isDark, required this.onToggle});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage>
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
+  late Future<List<PostItem>> _postsFuture;
+  final ScrollController _scrollController = ScrollController();
+  late final AnimationController _experienceController;
+  late final Animation<double> _experienceRotation;
+  bool _isOfflineFallback = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _postsFuture = _loadPosts();
+    _experienceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _experienceRotation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _experienceController,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  Future<List<PostItem>> _loadPosts() async {
+    try {
+      final posts = await fetchPosts();
+      if (mounted) {
+        setState(() {
+          _isOfflineFallback = false;
+        });
+      }
+      return posts;
+    } catch (_) {
+      final fallbackPosts = await loadViewedPosts();
+      if (fallbackPosts.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _isOfflineFallback = true;
+          });
+        }
+        return fallbackPosts;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _refreshPosts() async {
+    final future = _loadPosts();
+    if (mounted) {
+      setState(() {
+        _postsFuture = future;
+      });
+    }
+    try {
+      await future;
+    } catch (_) {
+      // Ignore refresh failures while preserving existing state.
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _experienceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
-      appBar: AppBar(
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: Color.fromARGB(255, 223, 6, 24),
+    super.build(context);
+    final isDark = widget.isDark;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+        appBar: AppBar(
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Divider(height: 1, color: Color.fromARGB(255, 223, 6, 24)),
+          ),
+          backgroundColor: isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Transform.translate(
+                    offset: const Offset(0, -2),
+                    child: ColorFiltered(
+                      colorFilter: isDark
+                          ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
+                          : const ColorFilter.mode(Colors.red, BlendMode.srcIn),
+                      child: Image.asset(
+                        "assets/images/logo.png",
+                        height: 35,
+                        errorBuilder: (c, e, s) {
+                          return const Icon(Icons.image_not_supported);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    "سكربتاتي",
+                    style: TextStyle(
+                      fontFamily: "Tajawal",
+                      fontSize: 24,
+                      color: isDark ? Colors.white : Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+              Transform.scale(
+                scale: 0.8,
+                child: Switch(
+                  value: isDark,
+                  onChanged: (v) => widget.onToggle(),
+                  activeColor: Colors.red,
+                ),
+              ),
+            ],
           ),
         ),
-        backgroundColor:
-            isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: isDark,
-                onChanged: (v) => onToggle(),
-                activeColor: Colors.red,
-              ),
+        body: RefreshIndicator(
+          onRefresh: _refreshPosts,
+          color: Colors.red,
+          backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
+          child: SingleChildScrollView(
+            key: const PageStorageKey('home_scroll_position'),
+            controller: _scrollController,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
-            Row(
+            child: Column(
               children: [
-                Text(
-                  "سكربتاتي",
-                  style: TextStyle(
-                    fontFamily: "Tajawal",
-                    fontSize: 24,
-                    color: isDark ? Colors.white : Colors.red,
-                  ),
-                ),
-                SizedBox(width: 10),
-                Transform.translate(
-                  offset: Offset(0, -2),
-                  child: ColorFiltered(
-                    colorFilter: isDark
-                        ? ColorFilter.mode(Colors.transparent, BlendMode.dst)
-                        : ColorFilter.mode(Colors.red, BlendMode.srcIn),
-                    child: Image.asset(
-                      "assets/images/logo.png",
-                      height: 35,
-                      errorBuilder: (c, e, s) {
-                        return Icon(Icons.image_not_supported);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      body: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              height: 300,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      "assets/images/ghlaf.png",
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color.fromARGB(209, 240, 3, 3),
-                            Color.fromARGB(204, 168, 19, 31).withOpacity(0.9),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                Container(
+                  width: double.infinity,
+                  height: 300,
+                  child: Stack(
+                    alignment: Alignment.center,
                     children: [
-                      Image.asset(
-                        "assets/images/logo.png",
-                        height: 60,
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        "سكربتاتي",
-                        style: TextStyle(
-                          fontFamily: "Tajawal",
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      Positioned.fill(
+                        child: Image.asset(
+                          "assets/images/ghlaf.png",
+                          fit: BoxFit.cover,
                         ),
                       ),
-                      SizedBox(height: 8),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 20),
-                        child: Text(
-                          "مجموعة من المشاريع والسكربتات المميزة",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: "Tajawal",
-                            fontSize: 16,
-                            color: Colors.white,
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                const Color.fromARGB(209, 240, 3, 3),
+                                const Color.fromARGB(204, 168, 19, 31).withOpacity(0.9),
+                              ],
+                            ),
                           ),
+                        ),
+                      ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            "assets/images/logo.png",
+                            height: 60,
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            "سكربتاتي",
+                            style: TextStyle(
+                              fontFamily: "Tajawal",
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: const Text(
+                              "مجموعة من المشاريع والسكربتات المميزة",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: "Tajawal",
+                                fontSize: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 25),
+                  color: isDark ? const Color.fromARGB(255, 34, 34, 34) : Colors.grey[200],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                    child: Row(
+                      children: [
+                        _card(context, Icons.storage, "استضافة\nالمواقع", HostingPage(), isDark),
+                        _card(context, Icons.shopping_cart, "متاجر\nالكترونية", StorePage(), isDark),
+                        _card(context, Icons.phone_android, "تطبيقات\nالموبايل", AppsPage(), isDark),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 15),
+                  padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color.fromARGB(0, 255, 255, 255) : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Align(
+                        alignment: Alignment.center,
+                        child: Text(
+                          'لماذا تختار سكربتاتي',
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : const Color.fromARGB(255, 221, 43, 43),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'نقدم لعملائنا مجموعة متنوعة من المزايا التي تجعلنا الخيار الأمثل لتنفيذ مشاريعهم التقنية. نحن نجمع بين الخبرة والإبداع والتقنيات المتطورة لتقديم حلول مبتكرة تلبي احتياجات عملائنا.',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 15,
+                          height: 1.7,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _buildFeatureItem(
+                        'تطوير تطبيقات مخصصة باحدث التقنيات',
+                        isDark,
+                      ),
+                      _buildFeatureItem(
+                        'تصميم مواقع احترافية',
+                        isDark,
+                      ),
+                      _buildFeatureItem(
+                        'برمجة المنصات المتقدمة',
+                        isDark,
+                      ),
+                      _buildFeatureItem(
+                        'حلول مشاكل برمجية',
+                        isDark,
+                      ),
+                      _buildFeatureItem(
+                        'الامن العالي والخدمة المميزة',
+                        isDark,
+                      ),
+                      _buildFeatureItem(
+                        'انجازات فترة قصيرة',
+                        isDark,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 15),
+                  padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 18),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color.fromARGB(3, 255, 255, 255) : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    textDirection: TextDirection.rtl,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.red, width: 2),
+                        ),
+                        child: CircleAvatar(
+                          radius: 30,
+                          child: ClipOval(
+                            child: ClickableImage(
+                              imagePath: "assets/images/profile.png",
+                              width: 84,
+                              height: 84,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          textDirection: TextDirection.rtl,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "محمد السراي",
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontFamily: "Tajawal",
+                                fontSize: 18,
+                                color: isDark ? Colors.white : Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              "مطور ويب محترف مع خبرة في تطوير المواقع والتطبيقات.",
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontFamily: "Tajawal",
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: 25),
-              color:
-                  isDark ? Color.fromARGB(255, 34, 34, 34) : Colors.grey[200],
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 15),
-                child: Row(
-                  children: [
-                    _card(context, Icons.storage, "استضافة\nالمواقع",
-                        HostingPage(), isDark),
-                    _card(context, Icons.shopping_cart, "متاجر\nالكترونية",
-                        StorePage(), isDark),
-                    _card(context, Icons.phone_android, "تطبيقات\nالموبايل",
-                        AppsPage(), isDark),
-                  ],
                 ),
-              ),
-            ),
-            SizedBox(height: 30),
-            Container(
-              margin: EdgeInsets.symmetric(horizontal: 15),
-              padding: EdgeInsets.symmetric(vertical: 25, horizontal: 20),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Color.fromARGB(3, 255, 255, 255)
-                    : Colors.grey[100],
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.red, width: 2),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: () async {
+                    if (await Vibration.hasVibrator() ?? false) {
+                      Vibration.vibrate(duration: 50);
+                    }
+                    _experienceController.forward(from: 0);
+                  },
+                  child: AnimatedBuilder(
+                    animation: _experienceRotation,
+                    builder: (context, child) {
+                      final rotationAngle = math.sin(_experienceRotation.value * 2 * math.pi) * (10 * math.pi / 180);
+                      return Transform.rotate(
+                        angle: rotationAngle,
+                        child: child,
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 15),
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 30),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color.fromARGB(255, 218, 36, 36) : const Color.fromARGB(255, 221, 49, 49),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: isDark ? const Color.fromARGB(255, 177, 125, 125) : const Color.fromARGB(31, 255, 255, 255),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark ? const Color.fromARGB(0, 0, 0, 0) : const Color.fromARGB(0, 158, 158, 158).withOpacity(0.15),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        textDirection: TextDirection.ltr,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            '+15',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 30,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromARGB(255, 241, 241, 241),
+                            ),
+                          ),
+                          const SizedBox(height: 0),
+                          Text(
+                            'سنوات من الخبرة في التصميم',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 15,
+                              color: isDark ? Colors.white70 : const Color.fromARGB(221, 223, 222, 222),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: CircleAvatar(
-                      radius: 100,
-                      child: ClipOval(
-                        child: ClickableImage(
-                          imagePath: "assets/images/profile.png",
-                          width: 200,
-                          height: 200,
-                          fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      "أحدث المنشورات",
+                      style: TextStyle(
+                        fontFamily: "Tajawal",
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (_isOfflineFallback)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFF0F0),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        'لا يوجد اتصال. عرض المنشورات التي شاهدتها سابقاً.',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 14,
+                          color: isDark ? Colors.white70 : Colors.black87,
                         ),
                       ),
                     ),
                   ),
-                  SizedBox(height: 15),
-                  Text(
-                    "محمد السراي",
-                    style: TextStyle(
-                      fontFamily: "Tajawal",
-                      fontSize: 20,
-                      color: isDark ? Colors.white : Colors.black,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "مطور ويب محترف مع خبرة في تطوير المواقع والتطبيقات.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: "Tajawal",
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 30),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 15),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  "أحدث المنشورات",
-                  style: TextStyle(
-                    fontFamily: "Tajawal",
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
+                FutureBuilder<List<PostItem>>(
+                  future: _postsFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: CircularProgressIndicator(color: Colors.red),
+                        ),
+                      );
+                    }
+
+                    if (snapshot.hasError) {
+                      return _buildPostsMessage(
+                        message: "تعذر تحميل المنشورات حالياً.",
+                        icon: Icons.cloud_off_rounded,
+                      );
+                    }
+
+                    final posts = snapshot.data ?? const <PostItem>[];
+                    if (posts.isEmpty) {
+                      return _buildPostsMessage(
+                        message: "لا توجد منشورات حالياً.",
+                        icon: Icons.article_outlined,
+                      );
+                    }
+
+                    return Column(
+                      children: posts
+                          .map((post) => _buildPostCard(context, post))
+                          .toList(),
+                    );
+                  },
                 ),
-              ),
+                const SizedBox(height: 90),
+              ],
             ),
-            SizedBox(height: 8),
-            FutureBuilder<List<PostItem>>(
-              future: _postsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Center(
-                      child: CircularProgressIndicator(color: Colors.red),
-                    ),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return _buildPostsMessage(
-                    message: "تعذر تحميل المنشورات حالياً.",
-                    icon: Icons.cloud_off_rounded,
-                  );
-                }
-
-                final posts = snapshot.data ?? const <PostItem>[];
-                if (posts.isEmpty) {
-                  return _buildPostsMessage(
-                    message: "لا توجد منشورات حالياً.",
-                    icon: Icons.article_outlined,
-                  );
-                }
-
-                return Column(
-                  children:
-                      posts.map((post) => _buildPostCard(context, post)).toList(),
-                );
-              },
-            ),
-            SizedBox(height: 90),
-          ],
+          ),
         ),
       ),
     );
@@ -1121,6 +1422,7 @@ class HomePage extends StatelessWidget {
     required String message,
     required IconData icon,
   }) {
+    final isDark = widget.isDark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
       child: Container(
@@ -1148,9 +1450,48 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  Widget _buildFeatureItem(String text, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              text,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 15,
+                height: 1.6,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 25,
+            height: 25,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.red,
+            ),
+            child: const Icon(
+              Icons.check,
+              color: Colors.white,
+              size: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPostCard(BuildContext context, PostItem post) {
+    final isDark = widget.isDark;
     return GestureDetector(
       onTap: () {
+        markPostAsViewed(post);
         Navigator.push(
           context,
           _SlideFromLeftRoute(
@@ -1223,7 +1564,7 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 10),
                   if (post.description.isNotEmpty)
                     _ExpandablePostDescription(
-                      description: post.description,
+                      post: post,
                       isDark: isDark,
                     ),
                 ],
@@ -1248,57 +1589,58 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class _ExpandablePostDescription extends StatefulWidget {
-  final String description;
+class _ExpandablePostDescription extends StatelessWidget {
+  final PostItem post;
   final bool isDark;
 
   const _ExpandablePostDescription({
-    required this.description,
+    required this.post,
     required this.isDark,
   });
 
   @override
-  State<_ExpandablePostDescription> createState() =>
-      _ExpandablePostDescriptionState();
-}
-
-class _ExpandablePostDescriptionState extends State<_ExpandablePostDescription> {
-  static const int _previewLength = 60;
-  bool _isExpanded = false;
-
-  @override
   Widget build(BuildContext context) {
-    final plainDescription = stripHtmlTags(widget.description);
-    final hasMore = plainDescription.length > _previewLength;
-    final text = hasMore && !_isExpanded
-        ? '${plainDescription.substring(0, _previewLength)}...'
+    const int previewLength = 60;
+    final plainDescription = stripHtmlTags(post.description);
+    final hasMore = plainDescription.length > previewLength;
+    final previewText = hasMore
+        ? '${plainDescription.substring(0, previewLength).trim()}...'
         : plainDescription;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          text,
+          previewText,
           textAlign: TextAlign.right,
           style: TextStyle(
             fontFamily: 'Tajawal',
             fontSize: 15,
             height: 1.7,
-            color: widget.isDark ? Colors.white70 : Colors.black87,
+            color: isDark ? Colors.white70 : Colors.black87,
           ),
         ),
         if (hasMore)
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _isExpanded = !_isExpanded;
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _isExpanded ? 'إخفاء' : 'اقرأ المزيد',
-                style: const TextStyle(
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () {
+                markPostAsViewed(post);
+                Navigator.push(
+                  context,
+                  _SlideFromLeftRoute(
+                    page: PostDetailsPage(post: post, isDark: isDark),
+                  ),
+                );
+              },
+              child: const Text(
+                'اقرأ المزيد',
+                style: TextStyle(
                   fontFamily: 'Tajawal',
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
@@ -1981,6 +2323,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
@@ -1988,11 +2331,12 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                           onPressed: () => Navigator.pop(context),
                           child: const Text(
-                            'تم الفهم',
+                            'أغلاق ',
                             style: TextStyle(
                               fontFamily: 'Tajawal',
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -2244,13 +2588,21 @@ class _SettingsPageState extends State<SettingsPage> {
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
+                        foregroundColor: const Color.fromARGB(255, 207, 202, 202),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
                         ),
                         elevation: 0,
                       ),
                       onPressed: () => _showDonationSheet(context),
-                      child: const Text('تبرع الآن'),
+                      child: const Text(
+                        'تبرع الآن',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Tajawal',
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
