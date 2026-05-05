@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,10 +16,9 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 class NotificationService {
   static const String _channelId = 'scrptaty_notifications';
   static const int _welcomeNotificationId = 1001;
+  static Timer? _welcomeTimer;
 
   static Future<void> initialize() async {
-    tz.initializeTimeZones();
-
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings();
@@ -86,7 +86,30 @@ class NotificationService {
     );
   }
 
+  static Future<void> showWelcomeNotificationAfterDelay() async {
+    _welcomeTimer?.cancel();
+    _welcomeTimer = Timer(const Duration(seconds: 5), () async {
+      await flutterLocalNotificationsPlugin.show(
+        _welcomeNotificationId,
+        'مرحبا بك في سكربتاتي',
+        'تم تفعيل الإشعارات بنجاح.',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,
+            'Scrptaty Notifications',
+            channelDescription: 'General app notifications',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+    });
+  }
+
   static Future<void> cancelAll() async {
+    _welcomeTimer?.cancel();
+    _welcomeTimer = null;
     await flutterLocalNotificationsPlugin.cancel(_welcomeNotificationId);
   }
 }
@@ -1238,7 +1261,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     await _setNotificationEnabled(true);
-    await NotificationService.scheduleWelcomeNotification();
+    await NotificationService.showWelcomeNotificationAfterDelay();
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
