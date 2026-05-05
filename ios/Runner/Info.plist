@@ -49,6 +49,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>نحتاج إلى صلاحية لحفظ الصور في ألبوم الصور</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>نحتاج إلى صلاحية للوصول إلى الصور</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

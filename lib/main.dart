@@ -15,7 +15,8 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:http/http.dart' as http;
-import 'image_download_helper.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -3172,20 +3173,46 @@ class _NetworkImageViewerState extends State<NetworkImageViewer>
     });
 
     try {
-      final savedPath = await downloadNetworkImage(
-        widget.imageUrl,
-        fileName: widget.downloadFileName,
-      );
+      // طلب الإذن أولاً
+      var status = await Permission.storage.status;
+      if (!status.isGranted) {
+        status = await Permission.storage.request();
+      }
 
-      if (!mounted) return;
+      if (status.isGranted || await Permission.photos.isGranted) {
+        // تنزيل الصورة باستخدام http
+        final response = await http.get(Uri.parse(widget.imageUrl));
+        if (response.statusCode == 200) {
+          // حفظ الصورة في ألبوم الصور
+          final result = await ImageGallerySaver.saveImage(
+            Uint8List.fromList(response.bodyBytes),
+            name: widget.downloadFileName ?? 'post_image',
+            quality: 100,
+          );
 
-      final message = savedPath == 'web_download_started'
-          ? 'تم بدء تنزيل الصورة.'
-          : 'تم حفظ الصورة في: $savedPath';
+          if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+          if (result != null && result['isSuccess'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('تم حفظ الصورة في ألبوم الصور بنجاح ✓')),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('تعذر حفظ الصورة.')),
+            );
+          }
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تعذر تنزيل الصورة.')),
+          );
+        }
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('يجب منح إذن الوصول إلى التخزين لحفظ الصورة.')),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
