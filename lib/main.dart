@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +12,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:http/http.dart' as http;
 import 'image_download_helper.dart';
 
@@ -717,6 +718,19 @@ class PostItem {
   }
 }
 
+String stripHtmlTags(String htmlText) {
+  return htmlText
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#039;', "'")
+      .trim();
+}
+
 Future<List<PostItem>> fetchPosts() async {
   final response =
       await http.get(Uri.parse('https://scrptaty.com/posts/get_posts.php'));
@@ -1254,10 +1268,11 @@ class _ExpandablePostDescriptionState extends State<_ExpandablePostDescription> 
 
   @override
   Widget build(BuildContext context) {
-    final hasMore = widget.description.length > _previewLength;
+    final plainDescription = stripHtmlTags(widget.description);
+    final hasMore = plainDescription.length > _previewLength;
     final text = hasMore && !_isExpanded
-        ? '${widget.description.substring(0, _previewLength)}...'
-        : widget.description;
+        ? '${plainDescription.substring(0, _previewLength)}...'
+        : plainDescription;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1392,15 +1407,33 @@ class PostDetailsPage extends StatelessWidget {
                   if (post.title.isNotEmpty && post.description.isNotEmpty)
                     const SizedBox(height: 14),
                   if (post.description.isNotEmpty)
-                    Text(
-                      post.description,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 17,
-                        height: 1.8,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
+                    Html(
+                      data: post.description,
+                      style: {
+                        'body': Style(
+                          margin: Margins.zero,
+                          padding: HtmlPaddings.zero,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                          fontFamily: 'Tajawal',
+                          fontSize: FontSize(17),
+                          lineHeight: LineHeight.number(1.8),
+                          textAlign: TextAlign.right,
+                        ),
+                        'p': Style(
+                          margin: Margins.zero,
+                          padding: HtmlPaddings.zero,
+                        ),
+                        'strong': Style(fontWeight: FontWeight.bold),
+                        'a': Style(color: Colors.red),
+                      },
+                      onLinkTap: (url, attributes, element) {
+                        if (url == null || url.isEmpty) return;
+                        final uri = Uri.tryParse(url);
+                        if (uri != null) {
+                          launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
                     ),
                 ],
               ),
@@ -2367,17 +2400,25 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
   _SlideFromLeftRoute({required this.page})
       : super(
           opaque: false,
-          transitionDuration: Duration(milliseconds: 300),
-          reverseTransitionDuration: Duration(milliseconds: 300),
+          transitionDuration: const Duration(milliseconds: 300),
+          reverseTransitionDuration: const Duration(milliseconds: 300),
           pageBuilder: (context, animation, secondaryAnimation) =>
               _SwipeToCloseWrapper(child: page),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final slideIn = Tween<Offset>(
-              begin: Offset(-1.0, 0.0),
-              end: Offset.zero,
+            final scaleIn = Tween<double>(
+              begin: 0.85,
+              end: 1.0,
             ).animate(CurvedAnimation(
               parent: animation,
-              curve: Curves.easeInOut,
+              curve: Curves.easeOutBack,
+            ));
+
+            final fadeIn = Tween<double>(
+              begin: 0.0,
+              end: 1.0,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeIn,
             ));
 
             return ValueListenableBuilder<double>(
@@ -2385,11 +2426,14 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
               builder: (_, drag, __) {
                 return Transform.translate(
                   offset: Offset(drag * 0.3, 0),
-                  child: SlideTransition(
-                    position: slideIn,
-                    child: Transform.translate(
-                      offset: Offset(-drag * 0.3, 0),
-                      child: child,
+                  child: FadeTransition(
+                    opacity: fadeIn,
+                    child: Transform.scale(
+                      scale: scaleIn.value,
+                      child: Transform.translate(
+                        offset: Offset(-drag * 0.3, 0),
+                        child: child,
+                      ),
                     ),
                   ),
                 );
