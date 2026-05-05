@@ -5,8 +5,95 @@ import 'dart:ui';
 import 'package:vibration/vibration.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
-void main() {
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+class NotificationService {
+  static const String _channelId = 'scrptaty_notifications';
+  static const int _welcomeNotificationId = 1001;
+
+  static Future<void> initialize() async {
+    tz.initializeTimeZones();
+
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings();
+
+    const initializationSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _channelId,
+            'Scrptaty Notifications',
+            description: 'General app notifications',
+            importance: Importance.max,
+          ),
+        );
+  }
+
+  static Future<bool> requestPermission() async {
+    final androidImplementation = flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    final iosImplementation = flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+
+    final androidGranted =
+        await androidImplementation?.requestNotificationsPermission();
+    final iosGranted = await iosImplementation?.requestPermissions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    return (androidGranted ?? true) && (iosGranted ?? true);
+  }
+
+  static Future<void> scheduleWelcomeNotification() async {
+    await flutterLocalNotificationsPlugin.cancel(_welcomeNotificationId);
+
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      _welcomeNotificationId,
+      'مرحبا بك في سكربتاتي',
+      'تم تفعيل الإشعارات بنجاح.',
+      tz.TZDateTime.now(tz.local).add(const Duration(seconds: 5)),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          'Scrptaty Notifications',
+          channelDescription: 'General app notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  static Future<void> cancelAll() async {
+    await flutterLocalNotificationsPlugin.cancel(_welcomeNotificationId);
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize();
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -1107,6 +1194,60 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool notificationsEnabled = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationPreference();
+  }
+
+  Future<void> _loadNotificationPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      notificationsEnabled = prefs.getBool('notifications_enabled') ?? false;
+    });
+  }
+
+  Future<void> _setNotificationEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notifications_enabled', value);
+    if (!mounted) return;
+    setState(() {
+      notificationsEnabled = value;
+    });
+  }
+
+  Future<void> _handleNotificationToggle(bool value) async {
+    if (!value) {
+      await NotificationService.cancelAll();
+      await _setNotificationEnabled(false);
+      return;
+    }
+
+    final granted = await NotificationService.requestPermission();
+
+    if (!granted) {
+      await _setNotificationEnabled(false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يجب السماح بالإشعارات من الجهاز لتفعيلها داخل التطبيق.'),
+        ),
+      );
+      return;
+    }
+
+    await _setNotificationEnabled(true);
+    await NotificationService.scheduleWelcomeNotification();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم تفعيل الإشعارات، وسيصل إشعار ترحيبي خلال 5 ثوانٍ.'),
+      ),
+    );
+  }
+
   Future<void> _openLink(String value) async {
     final uri = Uri.parse(value);
     if (await canLaunchUrl(uri)) {
@@ -1571,11 +1712,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     Switch(
                       value: notificationsEnabled,
-                      onChanged: (value) {
-                        setState(() {
-                          notificationsEnabled = value;
-                        });
-                      },
+                      onChanged: _handleNotificationToggle,
                       activeColor: Colors.red,
                       activeTrackColor: Colors.redAccent.withOpacity(0.4),
                     ),
