@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
+import 'image_download_helper.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -19,6 +21,7 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 class NotificationService {
   static const String _channelId = 'scrptaty_notifications';
   static const int _welcomeNotificationId = 1001;
+  static const int _postNotificationBaseId = 2000;
   static Timer? _welcomeTimer;
 
   static Future<void> initialize() async {
@@ -110,15 +113,68 @@ class NotificationService {
     });
   }
 
+  static Future<void> showPostNotification(PostItem post) async {
+    final title = post.title.isNotEmpty ? post.title : 'منشور جديد';
+    final body =
+        post.description.isNotEmpty ? post.description : 'تمت إضافة منشور جديد.';
+    final imageBytes = post.imageUrl.isNotEmpty
+        ? await _downloadImageBytes(post.encodedImageUrl)
+        : null;
+
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      'Scrptaty Notifications',
+      channelDescription: 'General app notifications',
+      importance: Importance.max,
+      priority: Priority.high,
+      styleInformation: imageBytes != null
+          ? BigPictureStyleInformation(
+              ByteArrayAndroidBitmap(imageBytes),
+              largeIcon: ByteArrayAndroidBitmap(imageBytes),
+              contentTitle: title,
+              summaryText: body,
+            )
+          : BigTextStyleInformation(
+              body,
+              contentTitle: title,
+              summaryText: 'Scrptaty',
+            ),
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      _postNotificationBaseId +
+          (int.tryParse(post.id) ??
+              DateTime.now().millisecondsSinceEpoch.remainder(100000)),
+      title,
+      body,
+      NotificationDetails(
+        android: androidDetails,
+        iOS: const DarwinNotificationDetails(),
+      ),
+      payload: post.id,
+    );
+  }
+
+  static Future<Uint8List?> _downloadImageBytes(String imageUrl) async {
+    try {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        return response.bodyBytes;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static Future<void> cancelAll() async {
     _welcomeTimer?.cancel();
     _welcomeTimer = null;
-    await flutterLocalNotificationsPlugin.cancel(_welcomeNotificationId);
+    await flutterLocalNotificationsPlugin.cancelAll();
   }
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
   await NotificationService.initialize();
   runApp(
     MaterialApp(
@@ -141,13 +197,15 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool isDark = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     loadTheme();
+    PostNotificationMonitor.start();
   }
 
   void loadTheme() async {
@@ -167,6 +225,20 @@ class _MyAppState extends State<MyApp> {
     if (await Vibration.hasVibrator() ?? false) {
       Vibration.vibrate(duration: 100);
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      PostNotificationMonitor.checkNow();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PostNotificationMonitor.stop();
+    super.dispose();
   }
 
   @override
@@ -680,6 +752,101 @@ Future<List<PostItem>> fetchPosts() async {
       .toList();
 }
 
+class PostNotificationMonitor {
+  static const String _notificationsEnabledKey = 'notifications_enabled';
+  static const String _lastSeenPostIdKey = 'last_seen_post_id';
+  static const Duration _checkInterval = Duration(minutes: 2);
+
+  static Timer? _timer;
+  static bool _isChecking = false;
+
+  static Future<void> start() async {
+    if (kIsWeb) return;
+
+    _timer?.cancel();
+    await checkNow();
+    _timer = Timer.periodic(_checkInterval, (_) {
+      checkNow();
+    });
+  }
+
+  static void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  static Future<void> markLatestPostAsSeen() async {
+    try {
+      final posts = await fetchPosts();
+      if (posts.isEmpty) return;
+
+      final sortedPosts = List<PostItem>.from(posts)..sort(_comparePosts);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastSeenPostIdKey, sortedPosts.first.id);
+    } catch (_) {}
+  }
+
+  static Future<void> checkNow() async {
+    if (_isChecking || kIsWeb) return;
+    _isChecking = true;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final notificationsEnabled =
+          prefs.getBool(_notificationsEnabledKey) ?? false;
+      final posts = await fetchPosts();
+
+      if (posts.isEmpty) return;
+
+      final sortedPosts = List<PostItem>.from(posts)..sort(_comparePosts);
+      final latestPostId = sortedPosts.first.id;
+      final lastSeenPostId = prefs.getString(_lastSeenPostIdKey);
+
+      if (!notificationsEnabled) {
+        await prefs.setString(_lastSeenPostIdKey, latestPostId);
+        return;
+      }
+
+      if (lastSeenPostId == null || lastSeenPostId.isEmpty) {
+        await prefs.setString(_lastSeenPostIdKey, latestPostId);
+        return;
+      }
+
+      if (lastSeenPostId == latestPostId) {
+        return;
+      }
+
+      final unseenPosts = <PostItem>[];
+      for (final post in sortedPosts) {
+        if (post.id == lastSeenPostId) {
+          break;
+        }
+        unseenPosts.add(post);
+      }
+
+      if (unseenPosts.isEmpty) {
+        await prefs.setString(_lastSeenPostIdKey, latestPostId);
+        return;
+      }
+
+      for (final post in unseenPosts.reversed) {
+        await NotificationService.showPostNotification(post);
+      }
+
+      await prefs.setString(_lastSeenPostIdKey, latestPostId);
+    } catch (_) {
+    } finally {
+      _isChecking = false;
+    }
+  }
+
+  static int _comparePosts(PostItem a, PostItem b) {
+    final aId = int.tryParse(a.id) ?? 0;
+    final bId = int.tryParse(b.id) ?? 0;
+    return bId.compareTo(aId);
+  }
+}
+
 class HomePage extends StatelessWidget {
   final bool isDark;
   final VoidCallback onToggle;
@@ -1041,15 +1208,9 @@ class HomePage extends StatelessWidget {
                   if (post.title.isNotEmpty && post.description.isNotEmpty)
                     const SizedBox(height: 10),
                   if (post.description.isNotEmpty)
-                    Text(
-                      post.description,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 15,
-                        height: 1.7,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
+                    _ExpandablePostDescription(
+                      description: post.description,
+                      isDark: isDark,
                     ),
                 ],
               ),
@@ -1069,6 +1230,69 @@ class HomePage extends StatelessWidget {
         page: page,
         isDark: isDark,
       ),
+    );
+  }
+}
+
+class _ExpandablePostDescription extends StatefulWidget {
+  final String description;
+  final bool isDark;
+
+  const _ExpandablePostDescription({
+    required this.description,
+    required this.isDark,
+  });
+
+  @override
+  State<_ExpandablePostDescription> createState() =>
+      _ExpandablePostDescriptionState();
+}
+
+class _ExpandablePostDescriptionState extends State<_ExpandablePostDescription> {
+  static const int _previewLength = 60;
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasMore = widget.description.length > _previewLength;
+    final text = hasMore && !_isExpanded
+        ? '${widget.description.substring(0, _previewLength)}...'
+        : widget.description;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          text,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            fontFamily: 'Tajawal',
+            fontSize: 15,
+            height: 1.7,
+            color: widget.isDark ? Colors.white70 : Colors.black87,
+          ),
+        ),
+        if (hasMore)
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                _isExpanded ? 'إخفاء' : 'اقرأ المزيد',
+                style: const TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1110,23 +1334,43 @@ class PostDetailsPage extends StatelessWidget {
             if (post.imageUrl.isNotEmpty)
               SizedBox(
                 height: 280,
-                child: Image.network(
-                  post.encodedImageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: isDark
-                          ? const Color.fromARGB(255, 32, 32, 32)
-                          : Colors.grey[300],
-                      child: const Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          color: Colors.red,
-                          size: 48,
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        opaque: false,
+                        barrierColor: Colors.transparent,
+                        transitionDuration: Duration(milliseconds: 100),
+                        reverseTransitionDuration: Duration(milliseconds: 100),
+                        pageBuilder: (_, __, ___) => NetworkImageViewer(
+                          imageUrl: post.encodedImageUrl,
+                          downloadFileName: 'post_${post.id}.jpg',
                         ),
+                        transitionsBuilder: (_, animation, __, child) {
+                          return FadeTransition(opacity: animation, child: child);
+                        },
                       ),
                     );
                   },
+                  child: Image.network(
+                    post.encodedImageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: isDark
+                            ? const Color.fromARGB(255, 32, 32, 32)
+                            : Colors.grey[300],
+                        child: const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.red,
+                            size: 48,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             Padding(
@@ -1525,6 +1769,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _handleNotificationToggle(bool value) async {
     if (!value) {
+      PostNotificationMonitor.stop();
       await NotificationService.cancelAll();
       await _setNotificationEnabled(false);
       return;
@@ -1545,6 +1790,8 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     await _setNotificationEnabled(true);
+    await PostNotificationMonitor.markLatestPostAsSeen();
+    await PostNotificationMonitor.start();
     await NotificationService.showWelcomeNotificationAfterDelay();
 
     if (!mounted) return;
@@ -2432,6 +2679,198 @@ class _ImageViewerState extends State<ImageViewer>
                   ),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class NetworkImageViewer extends StatefulWidget {
+  final String imageUrl;
+  final String? downloadFileName;
+
+  const NetworkImageViewer({
+    required this.imageUrl,
+    this.downloadFileName,
+  });
+
+  @override
+  State<NetworkImageViewer> createState() => _NetworkImageViewerState();
+}
+
+class _NetworkImageViewerState extends State<NetworkImageViewer>
+    with SingleTickerProviderStateMixin {
+  double offsetY = 0;
+  double scale = 1.0;
+  bool _isDownloading = false;
+
+  late AnimationController controller;
+  late Animation<double> animation;
+
+  void close() {
+    Navigator.pop(context);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 200),
+    );
+
+    animation = Tween<double>(begin: 0, end: 0).animate(controller)
+      ..addListener(() {
+        setState(() {
+          offsetY = animation.value;
+          scale = 1 - (offsetY.abs() / 600);
+        });
+      });
+  }
+
+  void animateBack() {
+    animation = Tween<double>(begin: offsetY, end: 0).animate(
+      CurvedAnimation(parent: controller, curve: Curves.easeOut),
+    );
+    controller.forward(from: 0);
+  }
+
+  Future<void> _downloadImage() async {
+    if (_isDownloading) return;
+
+    setState(() {
+      _isDownloading = true;
+    });
+
+    try {
+      final savedPath = await downloadNetworkImage(
+        widget.imageUrl,
+        fileName: widget.downloadFileName,
+      );
+
+      if (!mounted) return;
+
+      final message = savedPath == 'web_download_started'
+          ? 'تم بدء تنزيل الصورة.'
+          : 'تم حفظ الصورة في: $savedPath';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تنزيل الصورة.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          GestureDetector(
+            onTap: close,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+                sigmaY: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+              ),
+              child: Container(
+                color: Colors.black.withOpacity(0.3),
+              ),
+            ),
+          ),
+          Center(
+            child: GestureDetector(
+              onVerticalDragUpdate: (details) {
+                setState(() {
+                  offsetY += details.delta.dy;
+                  scale = 1 - (offsetY.abs() / 600);
+                  scale = scale.clamp(0.7, 1.0);
+                });
+              },
+              onVerticalDragEnd: (details) {
+                if (offsetY.abs() > 150) {
+                  close();
+                } else {
+                  animateBack();
+                }
+              },
+              child: Transform.translate(
+                offset: Offset(0, offsetY),
+                child: Transform.scale(
+                  scale: scale,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                      (offsetY.abs()).clamp(0, 50),
+                    ),
+                    child: InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 5,
+                      child: Image.network(
+                        widget.imageUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.black,
+                            padding: const EdgeInsets.all(40),
+                            child: const Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.red,
+                              size: 56,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 20,
+            bottom: 40,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              onPressed: _isDownloading ? null : _downloadImage,
+              icon: _isDownloading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.download_rounded),
+              label: Text(_isDownloading ? 'جاري التنزيل...' : 'تنزيل الصورة'),
             ),
           ),
         ],
