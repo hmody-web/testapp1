@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
+
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
@@ -44,11 +47,11 @@ class NotificationService {
   }
 
   static Future<bool> requestPermission() async {
-    final androidImplementation = flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
+    final androidImplementation =
+        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
-    final iosImplementation = flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
+    final iosImplementation =
+        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>();
 
     final androidGranted =
@@ -121,11 +124,11 @@ Future<void> main() async {
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        fontFamily: 'Tajawal', 
+        fontFamily: 'Tajawal',
         brightness: Brightness.light,
       ),
       darkTheme: ThemeData(
-        fontFamily: 'Tajawal', 
+        fontFamily: 'Tajawal',
         brightness: Brightness.dark,
       ),
       home: SplashScreen(),
@@ -252,8 +255,7 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          widget.isDark ? const Color(0xFF111111) : Colors.white,
+      backgroundColor: widget.isDark ? const Color(0xFF111111) : Colors.white,
       extendBody: true,
       body: PageView(
         controller: _pageController,
@@ -438,9 +440,7 @@ class _GlassNavBarState extends State<_GlassNavBar>
   Widget _buildMovingIndicator() {
     final fracPart = widget.currentPage - widget.currentPage.floor();
 
-    final stretchFactor = fracPart < 0.5
-        ? fracPart * 2
-        : (1 - fracPart) * 2;
+    final stretchFactor = fracPart < 0.5 ? fracPart * 2 : (1 - fracPart) * 2;
 
     return Container(
       decoration: BoxDecoration(
@@ -449,22 +449,19 @@ class _GlassNavBarState extends State<_GlassNavBar>
           center: Alignment.center,
           radius: 1.0,
           colors: [
-            const Color(0xFFFF3333)
-                .withOpacity(0.25 + stretchFactor * 0.1),
-            const Color(0xFFFF3333)
-                .withOpacity(0.10 + stretchFactor * 0.05),
+            const Color(0xFFFF3333).withOpacity(0.25 + stretchFactor * 0.1),
+            const Color(0xFFFF3333).withOpacity(0.10 + stretchFactor * 0.05),
           ],
         ),
         border: Border.all(
-          color: const Color(0xFFFF3333)
-              .withOpacity(0.15 + stretchFactor * 0.1),
+          color:
+              const Color(0xFFFF3333).withOpacity(0.15 + stretchFactor * 0.1),
           width: 0.5,
         ),
       ),
     );
   }
 }
-
 
 class _NavBarItem extends StatefulWidget {
   final _NavItem item;
@@ -530,19 +527,17 @@ class _NavBarItemState extends State<_NavBarItem>
 
   @override
   Widget build(BuildContext context) {
-final activeColor = widget.isDark 
-    ? Colors.red 
-    : Colors.red; 
+    final activeColor = widget.isDark ? Colors.red : Colors.red;
 
-final inactiveColor = widget.isDark
-    ? Colors.white.withOpacity(0.7)
-    : const Color.fromARGB(255, 73, 44, 44).withOpacity(0.8);
+    final inactiveColor = widget.isDark
+        ? Colors.white.withOpacity(0.7)
+        : const Color.fromARGB(255, 73, 44, 44).withOpacity(0.8);
 
-final strength = _getActivationStrength();
-final isFullyActive = strength > 0.99;
+    final strength = _getActivationStrength();
+    final isFullyActive = strength > 0.99;
 
-final Color resolvedColor = Color.lerp(inactiveColor, activeColor, strength)!;
-
+    final Color resolvedColor =
+        Color.lerp(inactiveColor, activeColor, strength)!;
 
     return Expanded(
       child: GestureDetector(
@@ -557,47 +552,43 @@ final Color resolvedColor = Color.lerp(inactiveColor, activeColor, strength)!;
                 scale: isFullyActive
                     ? _scaleAnim
                     : AlwaysStoppedAnimation(1.0 + strength * 0.15),
-child: Icon(
-  strength > 0.5
-      ? widget.item.activeIcon
-      : widget.item.icon,
-  color: resolvedColor,
-  size: 24 + strength * 1.5,
-  shadows: strength < 0.5  
-      ? [
-          Shadow(
-            offset: Offset(0, 0),             
-            blurRadius: 0.7,                   
-            color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1),
-          ),
-        ]
-      : [],
-),
-
+                child: Icon(
+                  strength > 0.5 ? widget.item.activeIcon : widget.item.icon,
+                  color: resolvedColor,
+                  size: 24 + strength * 1.5,
+                  shadows: strength < 0.5
+                      ? [
+                          Shadow(
+                            offset: Offset(0, 0),
+                            blurRadius: 0.7,
+                            color: const Color.fromARGB(255, 255, 255, 255)
+                                .withOpacity(1),
+                          ),
+                        ]
+                      : [],
+                ),
               ),
               const SizedBox(height: 3),
-AnimatedDefaultTextStyle(
-  duration: const Duration(milliseconds: 150),
-  style: TextStyle(
-    fontFamily: 'Tajawal',
-    fontSize: 11,
-    fontWeight: FontWeight.bold,
-    color: resolvedColor,
-    shadows: strength < 0.7   
-        ? [
-            Shadow(
-              offset: Offset(0, 0), 
-              blurRadius: 0.5,         
-              
-              color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1), 
-            ),
-          ]
-        : [], 
-  ),
-  child: Text(widget.item.label),
-),
-
-
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 150),
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: resolvedColor,
+                  shadows: strength < 0.7
+                      ? [
+                          Shadow(
+                            offset: Offset(0, 0),
+                            blurRadius: 0.5,
+                            color: const Color.fromARGB(255, 255, 255, 255)
+                                .withOpacity(1),
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Text(widget.item.label),
+              ),
             ],
           ),
         ),
@@ -609,18 +600,97 @@ AnimatedDefaultTextStyle(
 // ============================================================
 // 🔥 HomePage - الصفحة الرئيسية
 // ============================================================
+class PostItem {
+  final String id;
+  final String title;
+  final String description;
+  final String imageUrl;
+
+  const PostItem({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.imageUrl,
+  });
+
+  String get encodedImageUrl => Uri.encodeFull(imageUrl);
+
+  static String _readString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value != null) {
+        final text = value.toString().trim();
+        if (text.isNotEmpty) {
+          return text;
+        }
+      }
+    }
+    return '';
+  }
+
+  factory PostItem.fromJson(Map<String, dynamic> json) {
+    final rawImage = _readString(json, ['image', 'image_url', 'photo', 'img']);
+    final resolvedImage = rawImage.isEmpty
+        ? ''
+        : (rawImage.startsWith('http')
+            ? rawImage
+            : 'https://scrptaty.com/posts/$rawImage');
+
+    return PostItem(
+      id: _readString(json, ['id']),
+      title: _readString(json, ['title', 'name']),
+      description: _readString(json, ['description', 'content', 'body']),
+      imageUrl: resolvedImage,
+    );
+  }
+}
+
+Future<List<PostItem>> fetchPosts() async {
+  final response =
+      await http.get(Uri.parse('https://scrptaty.com/posts/get_posts.php'));
+
+  if (response.statusCode != 200) {
+    throw Exception('Failed to load posts: ${response.statusCode}');
+  }
+
+  final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+  final List<dynamic> rawPosts;
+  if (decoded is List) {
+    rawPosts = decoded;
+  } else if (decoded is Map<String, dynamic>) {
+    final dynamic nestedPosts =
+        decoded['posts'] ?? decoded['data'] ?? decoded['value'];
+    if (nestedPosts is List) {
+      rawPosts = nestedPosts;
+    } else {
+      rawPosts = [decoded];
+    }
+  } else {
+    throw Exception('Unexpected posts response');
+  }
+
+  return rawPosts
+      .whereType<Map>()
+      .map((item) => PostItem.fromJson(Map<String, dynamic>.from(item)))
+      .where((post) =>
+          post.title.isNotEmpty ||
+          post.description.isNotEmpty ||
+          post.imageUrl.isNotEmpty)
+      .toList();
+}
+
 class HomePage extends StatelessWidget {
   final bool isDark;
   final VoidCallback onToggle;
+  final Future<List<PostItem>> _postsFuture = fetchPosts();
 
   HomePage({required this.isDark, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
-
+      backgroundColor: isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
       appBar: AppBar(
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(1),
@@ -631,7 +701,6 @@ class HomePage extends StatelessWidget {
         ),
         backgroundColor:
             isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
-
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -643,7 +712,6 @@ class HomePage extends StatelessWidget {
                 activeColor: Colors.red,
               ),
             ),
-
             Row(
               children: [
                 Text(
@@ -659,8 +727,7 @@ class HomePage extends StatelessWidget {
                   offset: Offset(0, -2),
                   child: ColorFiltered(
                     colorFilter: isDark
-                        ? ColorFilter.mode(
-                            Colors.transparent, BlendMode.dst)
+                        ? ColorFilter.mode(Colors.transparent, BlendMode.dst)
                         : ColorFilter.mode(Colors.red, BlendMode.srcIn),
                     child: Image.asset(
                       "assets/images/logo.png",
@@ -676,12 +743,10 @@ class HomePage extends StatelessWidget {
           ],
         ),
       ),
-
       body: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
-          child: Column(
+        physics: const ClampingScrollPhysics(),
+        child: Column(
           children: [
-
             Container(
               width: double.infinity,
               height: 300,
@@ -702,8 +767,7 @@ class HomePage extends StatelessWidget {
                           end: Alignment.bottomCenter,
                           colors: [
                             Color.fromARGB(209, 240, 3, 3),
-                            Color.fromARGB(204, 168, 19, 31)
-                                .withOpacity(0.9),
+                            Color.fromARGB(204, 168, 19, 31).withOpacity(0.9),
                           ],
                         ),
                       ),
@@ -744,13 +808,11 @@ class HomePage extends StatelessWidget {
                 ],
               ),
             ),
-
             Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(vertical: 25),
-              color: isDark
-                  ? Color.fromARGB(255, 34, 34, 34)
-                  : Colors.grey[200],
+              color:
+                  isDark ? Color.fromARGB(255, 34, 34, 34) : Colors.grey[200],
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 15),
                 child: Row(
@@ -765,13 +827,10 @@ class HomePage extends StatelessWidget {
                 ),
               ),
             ),
-
             SizedBox(height: 30),
-
             Container(
               margin: EdgeInsets.symmetric(horizontal: 15),
-              padding:
-                  EdgeInsets.symmetric(vertical: 25, horizontal: 20),
+              padding: EdgeInsets.symmetric(vertical: 25, horizontal: 20),
               decoration: BoxDecoration(
                 color: isDark
                     ? Color.fromARGB(3, 255, 255, 255)
@@ -820,41 +879,56 @@ class HomePage extends StatelessWidget {
                 ],
               ),
             ),
-
             SizedBox(height: 30),
-
-            Column(
-              children: List.generate(8, (index) {
-                return Container(
-                  margin:
-                      EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Color(0xFF1E1E1E)
-                        : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(15),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 15),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  "أحدث المنشورات",
+                  style: TextStyle(
+                    fontFamily: "Tajawal",
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
                   ),
-                  child: Column(
-                    children: [
-                      ClickableImage(
-                        imagePath: "assets/images/post.png",
-                        height: 180,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-                      Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text(
-                          "عنوان المنشور ${index + 1}",
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
+                ),
+              ),
             ),
+            SizedBox(height: 8),
+            FutureBuilder<List<PostItem>>(
+              future: _postsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(
+                      child: CircularProgressIndicator(color: Colors.red),
+                    ),
+                  );
+                }
 
+                if (snapshot.hasError) {
+                  return _buildPostsMessage(
+                    message: "تعذر تحميل المنشورات حالياً.",
+                    icon: Icons.cloud_off_rounded,
+                  );
+                }
+
+                final posts = snapshot.data ?? const <PostItem>[];
+                if (posts.isEmpty) {
+                  return _buildPostsMessage(
+                    message: "لا توجد منشورات حالياً.",
+                    icon: Icons.article_outlined,
+                  );
+                }
+
+                return Column(
+                  children:
+                      posts.map((post) => _buildPostCard(context, post)).toList(),
+                );
+              },
+            ),
             SizedBox(height: 90),
           ],
         ),
@@ -862,14 +936,233 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Widget _card(BuildContext context, IconData icon, String text,
-      Widget page, bool isDark) {
+  Widget _buildPostsMessage({
+    required String message,
+    required IconData icon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.red, size: 38),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 15,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostCard(BuildContext context, PostItem post) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          _SlideFromLeftRoute(
+            page: PostDetailsPage(post: post, isDark: isDark),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
+          borderRadius: BorderRadius.circular(18),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (post.imageUrl.isNotEmpty)
+              SizedBox(
+                height: 220,
+                child: Image.network(
+                  post.encodedImageUrl,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) {
+                      return child;
+                    }
+                    return Container(
+                      color: isDark
+                          ? const Color.fromARGB(255, 32, 32, 32)
+                          : Colors.grey[300],
+                      child: const Center(
+                        child: CircularProgressIndicator(color: Colors.red),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: isDark
+                          ? const Color.fromARGB(255, 32, 32, 32)
+                          : Colors.grey[300],
+                      child: const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.red,
+                          size: 46,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (post.title.isNotEmpty)
+                    Text(
+                      post.title,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                    ),
+                  if (post.title.isNotEmpty && post.description.isNotEmpty)
+                    const SizedBox(height: 10),
+                  if (post.description.isNotEmpty)
+                    Text(
+                      post.description,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 15,
+                        height: 1.7,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context, IconData icon, String text, Widget page,
+      bool isDark) {
     return Expanded(
       child: _HoverCard(
         icon: icon,
         text: text,
         page: page,
         isDark: isDark,
+      ),
+    );
+  }
+}
+
+class PostDetailsPage extends StatelessWidget {
+  final PostItem post;
+  final bool isDark;
+
+  const PostDetailsPage({
+    required this.post,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor:
+              isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          title: Text(
+            post.title.isNotEmpty ? post.title : 'تفاصيل المنشور',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Divider(height: 1, color: Colors.red),
+          ),
+        ),
+        body: ListView(
+          children: [
+            if (post.imageUrl.isNotEmpty)
+              SizedBox(
+                height: 280,
+                child: Image.network(
+                  post.encodedImageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: isDark
+                          ? const Color.fromARGB(255, 32, 32, 32)
+                          : Colors.grey[300],
+                      child: const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.red,
+                          size: 48,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (post.title.isNotEmpty)
+                    Text(
+                      post.title,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                    ),
+                  if (post.title.isNotEmpty && post.description.isNotEmpty)
+                    const SizedBox(height: 14),
+                  if (post.description.isNotEmpty)
+                    Text(
+                      post.description,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 17,
+                        height: 1.8,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -887,8 +1180,7 @@ class ScriptsPage extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF111111) : Colors.grey[100],
+        backgroundColor: isDark ? const Color(0xFF111111) : Colors.grey[100],
         appBar: AppBar(
           backgroundColor:
               isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
@@ -912,8 +1204,7 @@ class ScriptsPage extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.bolt_rounded,
-                  size: 80,
-                  color: Colors.red.withOpacity(0.4)),
+                  size: 80, color: Colors.red.withOpacity(0.4)),
               SizedBox(height: 20),
               Text(
                 'السكربتات',
@@ -1067,26 +1358,21 @@ class ContactPage extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: 'Tajawal',
                           fontSize: 16,
-                          color:
-                              isDark ? Colors.white70 : Colors.black87,
+                          color: isDark ? Colors.white70 : Colors.black87,
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.email, color: Colors.red),
                 title: "البريد الإلكتروني",
                 subtitle: "info@scrptaty.com",
-                onTap: () =>
-                    _openLink("info@scrptaty.com", isEmail: true),
+                onTap: () => _openLink("info@scrptaty.com", isEmail: true),
               ),
-
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.language, color: Colors.blue),
@@ -1094,8 +1380,7 @@ class ContactPage extends StatelessWidget {
                 subtitle: "https://scrptaty.com",
                 onTap: () => _openLink("https://scrptaty.com"),
               ),
-
-               _buildCard(
+              _buildCard(
                 isDark,
                 icon: ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
@@ -1117,10 +1402,8 @@ class ContactPage extends StatelessWidget {
                 ),
                 title: "إنستكرام",
                 subtitle: "@Eng.mu7med",
-                onTap: () =>
-                    _openLink("https://instagram.com/Eng.mu7med"),
+                onTap: () => _openLink("https://instagram.com/Eng.mu7med"),
               ),
-
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.send, color: Colors.blueAccent),
@@ -1128,15 +1411,13 @@ class ContactPage extends StatelessWidget {
                 subtitle: "@Mooo5",
                 onTap: () => _openLink("https://t.me/Mooo5"),
               ),
-
               _buildCard(
                 isDark,
-                icon: const Icon(FontAwesomeIcons.whatsapp,
-                    color: Colors.green),
+                icon:
+                    const Icon(FontAwesomeIcons.whatsapp, color: Colors.green),
                 title: "واتساب",
                 subtitle: "+964 772 653 7514",
-                onTap: () =>
-                    _openLink("https://wa.me/9647726537514"),
+                onTap: () => _openLink("https://wa.me/9647726537514"),
               ),
               const SizedBox(height: 100),
             ],
@@ -1148,7 +1429,7 @@ class ContactPage extends StatelessWidget {
 
   Widget _buildCard(
     bool isDark, {
-    required Widget icon, 
+    required Widget icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
@@ -1190,8 +1471,9 @@ class ContactPage extends StatelessWidget {
                   textAlign: TextAlign.right,
                   style: TextStyle(
                     fontFamily: 'Tajawal',
-                    color:
-                        isDark ? const Color.fromARGB(82, 255, 255, 255) : Colors.black54,
+                    color: isDark
+                        ? const Color.fromARGB(82, 255, 255, 255)
+                        : Colors.black54,
                   ),
                 ),
               ),
@@ -1202,6 +1484,7 @@ class ContactPage extends StatelessWidget {
     );
   }
 }
+
 // ============================================================
 //  صفحة الإعدادات
 // ============================================================
@@ -1254,7 +1537,8 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('يجب السماح بالإشعارات من الجهاز لتفعيلها داخل التطبيق.'),
+          content:
+              Text('يجب السماح بالإشعارات من الجهاز لتفعيلها داخل التطبيق.'),
         ),
       );
       return;
@@ -1293,9 +1577,7 @@ class _SettingsPageState extends State<SettingsPage> {
           builder: (context, scrollController) {
             return Container(
               decoration: BoxDecoration(
-                color: widget.isDark
-                    ? const Color(0xFF1A1A1A)
-                    : Colors.white,
+                color: widget.isDark ? const Color(0xFF1A1A1A) : Colors.white,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(30),
                   topRight: Radius.circular(30),
@@ -1317,7 +1599,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   Expanded(
                     child: ListView(
                       controller: scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 20),
                       children: [
                         Text(
                           'التبرع والدعم',
@@ -1337,36 +1620,37 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontFamily: 'Tajawal',
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
-                              color: widget.isDark ? Colors.white : Colors.black,
+                              color:
+                                  widget.isDark ? Colors.white : Colors.black,
                             ),
                           ),
                         ),
                         const SizedBox(height: 24),
-                  Center(
-  child: ClipRRect(
-    borderRadius: BorderRadius.circular(20),
-    child: SizedBox(
-      width: 300,
-      height: 190,
-      child: Image.asset(
-        'assets/images/mastercard.png',
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            color: Colors.transparent,
-            child: Center(
-              child: Icon(
-                Icons.credit_card,
-                size: 0,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          );
-        },
-      ),
-    ),
-  ),
-),
+                        Center(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: SizedBox(
+                              width: 300,
+                              height: 190,
+                              child: Image.asset(
+                                'assets/images/mastercard.png',
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.transparent,
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.credit_card,
+                                        size: 0,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 32),
                         Container(
                           padding: const EdgeInsets.all(16),
@@ -1405,7 +1689,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                 style: TextStyle(
                                   fontFamily: 'Tajawal',
                                   fontSize: 14,
-                                  color: widget.isDark ? Colors.white70 : Colors.black54,
+                                  color: widget.isDark
+                                      ? Colors.white70
+                                      : Colors.black54,
                                 ),
                               ),
                             ],
@@ -1459,9 +1745,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: widget.isDark
-                  ? const Color(0xFF1A1A1A)
-                  : Colors.white,
+              color: widget.isDark ? const Color(0xFF1A1A1A) : Colors.white,
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
                 color: widget.isDark
@@ -1535,7 +1819,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               const SizedBox(height: 24),
-
               _buildCard(
                 child: Row(
                   children: [
@@ -1583,7 +1866,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
-
               _buildCard(
                 child: Row(
                   children: [
@@ -1608,7 +1890,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontFamily: 'Tajawal',
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: widget.isDark ? Colors.white : Colors.black,
+                              color:
+                                  widget.isDark ? Colors.white : Colors.black,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -1619,8 +1902,9 @@ class _SettingsPageState extends State<SettingsPage> {
                             style: TextStyle(
                               fontFamily: 'Tajawal',
                               fontSize: 14,
-                              color:
-                                  widget.isDark ? Colors.white70 : Colors.black54,
+                              color: widget.isDark
+                                  ? Colors.white70
+                                  : Colors.black54,
                             ),
                           ),
                         ],
@@ -1635,7 +1919,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
-
               _buildCard(
                 child: Row(
                   children: [
@@ -1660,7 +1943,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontFamily: 'Tajawal',
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: widget.isDark ? Colors.white : Colors.black,
+                              color:
+                                  widget.isDark ? Colors.white : Colors.black,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -1669,8 +1953,9 @@ class _SettingsPageState extends State<SettingsPage> {
                             style: TextStyle(
                               fontFamily: 'Tajawal',
                               fontSize: 14,
-                              color:
-                                  widget.isDark ? Colors.white70 : Colors.black54,
+                              color: widget.isDark
+                                  ? Colors.white70
+                                  : Colors.black54,
                             ),
                           ),
                         ],
@@ -1690,14 +1975,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
-
               _buildCard(
                 child: Row(
                   children: [
                     CircleAvatar(
                       radius: 26,
-                      backgroundColor:
-                          widget.isDark ? Colors.white12 : const Color.fromARGB(255, 255, 235, 235),
+                      backgroundColor: widget.isDark
+                          ? Colors.white12
+                          : const Color.fromARGB(255, 255, 235, 235),
                       child: const Icon(
                         Icons.notifications_active,
                         color: Colors.red,
@@ -1715,7 +2000,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontFamily: 'Tajawal',
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: widget.isDark ? Colors.white : Colors.black,
+                              color:
+                                  widget.isDark ? Colors.white : Colors.black,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -1726,8 +2012,9 @@ class _SettingsPageState extends State<SettingsPage> {
                             style: TextStyle(
                               fontFamily: 'Tajawal',
                               fontSize: 14,
-                              color:
-                                  widget.isDark ? Colors.white70 : Colors.black54,
+                              color: widget.isDark
+                                  ? Colors.white70
+                                  : Colors.black54,
                             ),
                           ),
                         ],
@@ -1779,7 +2066,6 @@ class _HoverCardState extends State<_HoverCard> {
     return MouseRegion(
       onEnter: (_) => setState(() => isHovered = true),
       onExit: (_) => setState(() => isHovered = false),
-
       child: GestureDetector(
         onTapDown: (_) => setState(() => isPressed = true),
         onTapUp: (_) => setState(() => isPressed = false),
@@ -1790,7 +2076,6 @@ class _HoverCardState extends State<_HoverCard> {
             _SlideFromLeftRoute(page: widget.page),
           );
         },
-
         child: AnimatedContainer(
           duration: Duration(milliseconds: 200),
           margin: EdgeInsets.symmetric(horizontal: 5),
@@ -1804,9 +2089,7 @@ class _HoverCardState extends State<_HoverCard> {
                             .withOpacity(0.7)
                         : const Color.fromARGB(255, 212, 42, 42)
                             .withOpacity(0.2))
-                    : (widget.isDark
-                        ? Color(0xFF1E1E1E)
-                        : Colors.white),
+                    : (widget.isDark ? Color(0xFF1E1E1E) : Colors.white),
             borderRadius: BorderRadius.circular(15),
           ),
           child: Column(
@@ -1829,7 +2112,6 @@ class _HoverCardState extends State<_HoverCard> {
   }
 }
 
-
 final _globalDragNotifier = ValueNotifier<double>(0);
 
 class _SlideFromLeftRoute extends PageRouteBuilder {
@@ -1842,8 +2124,7 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
           reverseTransitionDuration: Duration(milliseconds: 300),
           pageBuilder: (context, animation, secondaryAnimation) =>
               _SwipeToCloseWrapper(child: page),
-          transitionsBuilder:
-              (context, animation, secondaryAnimation, child) {
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
             final slideIn = Tween<Offset>(
               begin: Offset(-1.0, 0.0),
               end: Offset.zero,
@@ -1950,8 +2231,7 @@ class StorePage extends StatelessWidget {
 class AppsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _innerPage(
-        context, "تطبيقات الموبايل", "تفاصيل التطبيقات...");
+    return _innerPage(context, "تطبيقات الموبايل", "تفاصيل التطبيقات...");
   }
 }
 
@@ -1962,13 +2242,11 @@ Widget _innerPage(BuildContext context, String title, String text) {
     textDirection: TextDirection.rtl,
     child: Scaffold(
       backgroundColor: isDark ? Color(0xFF121212) : Colors.grey[100],
-
       appBar: AppBar(
         backgroundColor:
             isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
         elevation: 2,
         automaticallyImplyLeading: false,
-
         leading: IconButton(
           icon: Icon(
             Icons.arrow_forward_ios,
@@ -1977,7 +2255,6 @@ Widget _innerPage(BuildContext context, String title, String text) {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-
         title: Text(
           title,
           textAlign: TextAlign.center,
@@ -1988,15 +2265,12 @@ Widget _innerPage(BuildContext context, String title, String text) {
             color: isDark ? Colors.white : Colors.black,
           ),
         ),
-
         actions: [SizedBox(width: 48)],
-
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(1),
           child: Container(height: 1, color: Colors.red),
         ),
       ),
-
       body: Padding(
         padding: EdgeInsets.all(20),
         child: Text(
@@ -2037,8 +2311,7 @@ class ClickableImage extends StatelessWidget {
             barrierColor: Colors.transparent,
             transitionDuration: Duration(milliseconds: 100),
             reverseTransitionDuration: Duration(milliseconds: 100),
-            pageBuilder: (_, __, ___) =>
-                ImageViewer(imagePath: imagePath),
+            pageBuilder: (_, __, ___) => ImageViewer(imagePath: imagePath),
             transitionsBuilder: (_, animation, __, child) {
               return FadeTransition(opacity: animation, child: child);
             },
@@ -2119,17 +2392,14 @@ class _ImageViewerState extends State<ImageViewer>
             onTap: close,
             child: BackdropFilter(
               filter: ImageFilter.blur(
-                sigmaX:
-                    20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
-                sigmaY:
-                    20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+                sigmaX: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
+                sigmaY: 20 * (1 - (offsetY.abs() / 300)).clamp(0.0, 1.0),
               ),
               child: Container(
                 color: Colors.black.withOpacity(0.3),
               ),
             ),
           ),
-
           Center(
             child: GestureDetector(
               onVerticalDragUpdate: (details) {
@@ -2169,8 +2439,6 @@ class _ImageViewerState extends State<ImageViewer>
     );
   }
 }
-
-
 
 class SplashScreen extends StatefulWidget {
   @override
@@ -2227,7 +2495,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    player.dispose(); 
+    player.dispose();
     controller.dispose();
     super.dispose();
   }
