@@ -1365,7 +1365,7 @@ class _HomePageState extends State<HomePage>
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Text(
-                        'لا يوجد اتصال. عرض المنشورات التي شاهدتها سابقاً.',
+                        'لا يوجد اتصال. يتم عرض المنشورات بدون انترنيت .',
                         textAlign: TextAlign.right,
                         style: TextStyle(
                           fontFamily: 'Tajawal',
@@ -1403,9 +1403,7 @@ class _HomePageState extends State<HomePage>
                     }
 
                     return Column(
-                      children: posts
-                          .map((post) => _buildPostCard(context, post))
-                          .toList(),
+                      children: _buildPostCards(context, posts),
                     );
                   },
                 ),
@@ -1450,25 +1448,35 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  List<Widget> _buildPostCards(BuildContext context, List<PostItem> posts) {
+    final isDark = widget.isDark;
+
+    return List<Widget>.generate(
+      posts.length * 2 - 1,
+      (index) {
+        if (index.isEven) {
+          final post = posts[index ~/ 2];
+          return _buildPostCard(context, post);
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: Divider(
+            height: 2,
+            thickness: 0.5,
+            color: isDark ? Colors.white12 : Colors.black12,
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildFeatureItem(String text, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
+        textDirection: TextDirection.rtl,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            child: Text(
-              text,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontFamily: 'Tajawal',
-                fontSize: 15,
-                height: 1.6,
-                color: isDark ? Colors.white70 : Colors.black87,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
           Container(
             width: 25,
             height: 25,
@@ -1480,6 +1488,19 @@ class _HomePageState extends State<HomePage>
               Icons.check,
               color: Colors.white,
               size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 15,
+                height: 1.6,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
             ),
           ),
         ],
@@ -1500,7 +1521,7 @@ class _HomePageState extends State<HomePage>
         );
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
           borderRadius: BorderRadius.circular(18),
@@ -1601,7 +1622,9 @@ class _ExpandablePostDescription extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const int previewLength = 60;
-    final plainDescription = stripHtmlTags(post.description);
+    final plainDescription = stripHtmlTags(post.description)
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     final hasMore = plainDescription.length > previewLength;
     final previewText = hasMore
         ? '${plainDescription.substring(0, previewLength).trim()}...'
