@@ -1696,27 +1696,31 @@ class PostDetailsPage extends StatelessWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
-        appBar: AppBar(
-          backgroundColor:
-              isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
-          title: Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              post.title.isNotEmpty ? post.title : 'تفاصيل المنشور',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontFamily: 'Tajawal',
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-            ),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: Colors.red),
-          ),
-        ),
+appBar: AppBar(
+  backgroundColor:
+      isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+  title: Text(
+    post.title.isNotEmpty ? post.title : 'تفاصيل المنشور',
+    textAlign: TextAlign.right,
+    style: TextStyle(
+      fontFamily: 'Tajawal',
+      fontSize: 20,
+      fontWeight: FontWeight.bold,
+      color: isDark ? Colors.white : Colors.black,
+    ),
+  ),
+  centerTitle: false, // Added line - ensures text is not centered
+  titleTextStyle: TextStyle(
+    fontFamily: 'Tajawal',
+    fontSize: 20,
+    fontWeight: FontWeight.bold,
+    color: isDark ? Colors.white : Colors.black,
+  ),
+  bottom: const PreferredSize(
+    preferredSize: Size.fromHeight(1),
+    child: Divider(height: 1, color: Colors.red),
+  ),
+),
         body: ListView(
           children: [
             if (post.imageUrl.isNotEmpty)
@@ -2181,31 +2185,20 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
 
+    // Open system app settings to allow user to enable notifications
+    await openAppSettings();
+
+    // Wait a bit and check if permission was granted
+    await Future.delayed(const Duration(seconds: 1));
+
     final granted = await NotificationService.requestPermission();
+    await _setNotificationEnabled(granted);
 
-    if (!granted) {
-      await _setNotificationEnabled(false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('يجب السماح بالإشعارات من الجهاز لتفعيلها داخل التطبيق.'),
-        ),
-      );
-      return;
+    if (granted && mounted) {
+      await PostNotificationMonitor.markLatestPostAsSeen();
+      await PostNotificationMonitor.start();
+      await NotificationService.showWelcomeNotificationAfterDelay();
     }
-
-    await _setNotificationEnabled(true);
-    await PostNotificationMonitor.markLatestPostAsSeen();
-    await PostNotificationMonitor.start();
-    await NotificationService.showWelcomeNotificationAfterDelay();
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('تم تفعيل الإشعارات، وسيصل إشعار ترحيبي خلال 5 ثوانٍ.'),
-      ),
-    );
   }
 
   Future<void> _openLink(String value) async {
@@ -3127,14 +3120,155 @@ class NetworkImageViewer extends StatefulWidget {
   State<NetworkImageViewer> createState() => _NetworkImageViewerState();
 }
 
+// Custom notification overlay for top slide-down animation
+class _TopNotification extends StatefulWidget {
+  final String message;
+  final bool isSuccess;
+  final VoidCallback onAnimationComplete;
+
+  const _TopNotification({
+    required this.message,
+    required this.isSuccess,
+    required this.onAnimationComplete,
+  });
+
+  @override
+  State<_TopNotification> createState() => _TopNotificationState();
+}
+
+class _TopNotificationState extends State<_TopNotification>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+
+    _controller.forward();
+
+    // Auto dismiss after 3 seconds
+    Future.delayed(const Duration(seconds: 3), () {
+      _dismiss();
+    });
+  }
+
+  void _dismiss() {
+    _controller.reverse().then((_) {
+      if (mounted) {
+        widget.onAnimationComplete();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: widget.isSuccess
+                    ? (isDark ? const Color(0xFF1E3A1E) : const Color(0xFFE8F5E9))
+                    : (isDark ? const Color(0xFF3A1E1E) : const Color(0xFFFFEBEE)),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: widget.isSuccess
+                      ? Colors.green.withOpacity(0.3)
+                      : Colors.red.withOpacity(0.3),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.isSuccess ? Icons.check_circle : Icons.error,
+                    color: widget.isSuccess ? Colors.green : Colors.red,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.message,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NetworkImageViewerState extends State<NetworkImageViewer>
     with SingleTickerProviderStateMixin {
   double offsetY = 0;
   double scale = 1.0;
   bool _isDownloading = false;
+  String? _notificationMessage;
+  bool _notificationSuccess = false;
 
   late AnimationController controller;
   late Animation<double> animation;
+
+  void _showTopNotification(String message, bool isSuccess) {
+    setState(() {
+      _notificationMessage = message;
+      _notificationSuccess = isSuccess;
+    });
+  }
+
+  void _hideNotification() {
+    setState(() {
+      _notificationMessage = null;
+    });
+  }
 
   void close() {
     Navigator.pop(context);
@@ -3193,31 +3327,21 @@ class _NetworkImageViewerState extends State<NetworkImageViewer>
           if (!mounted) return;
 
           if (result != null && result['isSuccess'] == true) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('تم حفظ الصورة في ألبوم الصور بنجاح ✓')),
-            );
+            _showTopNotification('تم حفظ الصورة في ألبوم الصور بنجاح ✓', true);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('تعذر حفظ الصورة.')),
-            );
+            _showTopNotification('تعذر حفظ الصورة.', false);
           }
         } else {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تعذر تنزيل الصورة.')),
-          );
+          _showTopNotification('تعذر تنزيل الصورة.', false);
         }
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('يجب منح إذن الوصول إلى التخزين لحفظ الصورة.')),
-        );
+        _showTopNotification('يجب منح إذن الوصول إلى التخزين لحفظ الصورة.', false);
       }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تنزيل الصورة.')),
-      );
+      _showTopNotification('تعذر تنزيل الصورة.', false);
     } finally {
       if (mounted) {
         setState(() {
@@ -3326,6 +3450,18 @@ class _NetworkImageViewerState extends State<NetworkImageViewer>
               label: Text(_isDownloading ? 'جاري التنزيل...' : 'تنزيل الصورة'),
             ),
           ),
+          // Top notification overlay
+          if (_notificationMessage != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _TopNotification(
+                message: _notificationMessage!,
+                isSuccess: _notificationSuccess,
+                onAnimationComplete: _hideNotification,
+              ),
+            ),
         ],
       ),
     );
