@@ -11,11 +11,11 @@ void main() {
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        fontFamily: 'Tajawal', // ✅ الخط الافتراضي للتطبيق كله
+        fontFamily: 'Tajawal', 
         brightness: Brightness.light,
       ),
       darkTheme: ThemeData(
-        fontFamily: 'Tajawal', // ✅ نفس الخط للثيم الداكن
+        fontFamily: 'Tajawal', 
         brightness: Brightness.dark,
       ),
       home: SplashScreen(),
@@ -23,9 +23,6 @@ void main() {
   );
 }
 
-// ============================================================
-// 🔥 MyApp - Stateful للتحكم بالثيم + حفظه
-// ============================================================
 class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => _MyAppState();
@@ -74,9 +71,6 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-// ============================================================
-// 🔥 MainShell - الصفحة الرئيسية مع البار السفلي الزجاجي
-// ============================================================
 class MainShell extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggle;
@@ -88,7 +82,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
-  double _currentPage = 0.0; // القيمة الدقيقة لموضع الصفحة
+  double _currentPage = 0.0;
   late final PageController _pageController;
 
   final List<_NavItem> _items = [
@@ -153,6 +147,7 @@ class _MainShellState extends State<MainShell> {
       extendBody: true,
       body: PageView(
         controller: _pageController,
+        physics: const ClampingScrollPhysics(),
         onPageChanged: (i) => setState(() {
           _currentIndex = i;
           _currentPage = i.toDouble();
@@ -161,7 +156,7 @@ class _MainShellState extends State<MainShell> {
           HomePage(isDark: widget.isDark, onToggle: widget.onToggle),
           ScriptsPage(isDark: widget.isDark),
           ContactPage(isDark: widget.isDark),
-          SettingsPage(isDark: widget.isDark),
+          SettingsPage(isDark: widget.isDark, onToggle: widget.onToggle),
         ],
       ),
       bottomNavigationBar: _GlassNavBar(
@@ -175,9 +170,6 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
-// ============================================================
-// 🔥 _NavItem - موديل عنصر البار
-// ============================================================
 class _NavItem {
   final IconData icon;
   final IconData activeIcon;
@@ -189,11 +181,8 @@ class _NavItem {
   });
 }
 
-// ============================================================
-// 🔥 البار الزجاجي الاحترافي مع تأثير الانتقال الانسيابي
-// ============================================================
-class _GlassNavBar extends StatelessWidget {
-  final double currentPage; // القيمة الدقيقة للصفحة (مثلاً 1.5 بين صفحتين)
+class _GlassNavBar extends StatefulWidget {
+  final double currentPage;
   final int currentIndex;
   final List<_NavItem> items;
   final bool isDark;
@@ -208,83 +197,128 @@ class _GlassNavBar extends StatelessWidget {
   });
 
   @override
+  State<_GlassNavBar> createState() => _GlassNavBarState();
+}
+
+class _GlassNavBarState extends State<_GlassNavBar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _pulseController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _pulseController.reverse();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  void _triggerPulse() {
+    _pulseController.forward(from: 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SafeArea(
-        bottom: false, // يخلي البار ينزل تحت
+      bottom: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 25),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(40),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-child: GestureDetector(
-  onHorizontalDragEnd: (details) {
-    if (details.primaryVelocity! < 0) {
-      // سحب لليسار → صفحة تالية
-      if (currentIndex < items.length - 1) {
-        onTap(currentIndex + 1);
-      }
-    } else if (details.primaryVelocity! > 0) {
-      // سحب لليمين → صفحة سابقة
-      if (currentIndex > 0) {
-        onTap(currentIndex - 1);
-      }
-    }
-  },
-  child: Container(
-    height: 60,
-decoration: BoxDecoration(
-  color: isDark 
-      ? Colors.red.withOpacity(0.03)   // 🔥 إذا الثيم داكن → أحمر خفيف
-      : const Color.fromARGB(255, 243, 33, 33).withOpacity(0.1), // 🔥 إذا الثيم فاتح → أزرق خفيف (مثال)
-  borderRadius: BorderRadius.circular(40),
-  border: Border.all(
-    color: isDark
-        ? Colors.white.withOpacity(0.18)
-        : Colors.black.withOpacity(0.10),
-    width: 0.5,
-  ),
-),
+        child: MouseRegion(
+          onEnter: (_) => _triggerPulse(),
+          onExit: (_) {},
+          child: ScaleTransition(
+            scale: _pulseAnimation,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(40),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                child: GestureDetector(
+                  onHorizontalDragStart: (_) {
+                    _triggerPulse();
+                  },
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity! < 0) {
+                      if (widget.currentIndex < widget.items.length - 1) {
+                        widget.onTap(widget.currentIndex + 1);
+                      }
+                    } else if (details.primaryVelocity! > 0) {
+                      if (widget.currentIndex > 0) {
+                        widget.onTap(widget.currentIndex - 1);
+                      }
+                    }
+                  },
+                  child: Container(
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: widget.isDark
+                          ? Colors.red.withOpacity(0.03)
+                          : const Color.fromARGB(255, 243, 33, 33)
+                              .withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(40),
+                      border: Border.all(
+                        color: widget.isDark
+                            ? Colors.white.withOpacity(0.18)
+                            : Colors.black.withOpacity(0.10),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final itemWidth =
+                            constraints.maxWidth / widget.items.length;
 
-
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final itemWidth = constraints.maxWidth / items.length;
-        
-        return Stack(
-          children: [
-            // 🔥 التأثير الأحمر المتحرك بسلاسة
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              left: currentIndex * itemWidth + 5,
-              top: 5,
-              bottom: 5,
-              width: itemWidth - 10,
-              child: _buildMovingIndicator(),
-            ),
-
-            // 🔥 الأزرار
-            Row(
-              children: List.generate(
-                items.length,
-                (i) => _NavBarItem(
-                  item: items[i],
-                  itemIndex: i,
-                  currentPage: currentPage,
-                  isDark: isDark,
-                  onTap: () => onTap(i),
-                  itemWidth: itemWidth,
+                        return Stack(
+                          children: [
+                            AnimatedPositioned(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              left: widget.currentIndex * itemWidth + 5,
+                              top: 5,
+                              bottom: 5,
+                              width: itemWidth - 10,
+                              child: _buildMovingIndicator(),
+                            ),
+                            Row(
+                              children: List.generate(
+                                widget.items.length,
+                                (i) => _NavBarItem(
+                                  item: widget.items[i],
+                                  itemIndex: i,
+                                  currentPage: widget.currentPage,
+                                  isDark: widget.isDark,
+                                  onTap: () {
+                                    _triggerPulse();
+                                    widget.onTap(i);
+                                  },
+                                  itemWidth: itemWidth,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        );
-      },
-    ),
-  ),
-),
-
           ),
         ),
       ),
@@ -292,14 +326,12 @@ decoration: BoxDecoration(
   }
 
   Widget _buildMovingIndicator() {
-    // حساب نسبة الانتقال بين الأزرار
-    final fracPart = currentPage - currentPage.floor();
-    
-    // تأثير التمدد عند الانتقال - يتمدد في المنتصف ثم يعود
-    final stretchFactor = fracPart < 0.5 
-        ? fracPart * 2  // يتمدد من 0 إلى 1
-        : (1 - fracPart) * 2; // يتقلص من 1 إلى 0
-    
+    final fracPart = widget.currentPage - widget.currentPage.floor();
+
+    final stretchFactor = fracPart < 0.5
+        ? fracPart * 2
+        : (1 - fracPart) * 2;
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
@@ -307,12 +339,15 @@ decoration: BoxDecoration(
           center: Alignment.center,
           radius: 1.0,
           colors: [
-            const Color(0xFFFF3333).withOpacity(0.25 + stretchFactor * 0.1),
-            const Color(0xFFFF3333).withOpacity(0.10 + stretchFactor * 0.05),
+            const Color(0xFFFF3333)
+                .withOpacity(0.25 + stretchFactor * 0.1),
+            const Color(0xFFFF3333)
+                .withOpacity(0.10 + stretchFactor * 0.05),
           ],
         ),
         border: Border.all(
-          color: const Color(0xFFFF3333).withOpacity(0.15 + stretchFactor * 0.1),
+          color: const Color(0xFFFF3333)
+              .withOpacity(0.15 + stretchFactor * 0.1),
           width: 0.5,
         ),
       ),
@@ -320,9 +355,7 @@ decoration: BoxDecoration(
   }
 }
 
-// ============================================================
-// 🔥 عنصر داخل البار مع انيميشن انسيابي للسحب
-// ============================================================
+
 class _NavBarItem extends StatefulWidget {
   final _NavItem item;
   final int itemIndex;
@@ -379,7 +412,6 @@ class _NavBarItemState extends State<_NavBarItem>
     super.dispose();
   }
 
-  // حساب قوة التأثير على كل زر بناءً على موضع الصفحة الحالي
   double _getActivationStrength() {
     final distance = (widget.currentPage - widget.itemIndex).abs();
     if (distance >= 1.0) return 0.0;
@@ -388,10 +420,9 @@ class _NavBarItemState extends State<_NavBarItem>
 
   @override
   Widget build(BuildContext context) {
-    // 🔥 لون الأيقونات والنصوص حسب الثيم
 final activeColor = widget.isDark 
-    ? Colors.red // إذا داكن → أحمر
-    : Colors.red; // إذا فاتح → أزرق (مثال)
+    ? Colors.red 
+    : Colors.red; 
 
 final inactiveColor = widget.isDark
     ? Colors.white.withOpacity(0.7)
@@ -400,7 +431,6 @@ final inactiveColor = widget.isDark
 final strength = _getActivationStrength();
 final isFullyActive = strength > 0.99;
 
-// تدرج اللون بناءً على قوة التأثير
 final Color resolvedColor = Color.lerp(inactiveColor, activeColor, strength)!;
 
 
@@ -423,15 +453,15 @@ child: Icon(
       : widget.item.icon,
   color: resolvedColor,
   size: 24 + strength * 1.5,
-  shadows: strength < 0.5   // 🔥 إذا الأيقونة غير مختارة
+  shadows: strength < 0.5  
       ? [
           Shadow(
-            offset: Offset(0, 0),              // اتجاه الظل
-            blurRadius: 0.7,                     // شدة التمويه
-            color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1), // وضوح الظل
+            offset: Offset(0, 0),             
+            blurRadius: 0.7,                   
+            color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1),
           ),
         ]
-      : [], // الأيقونة المختارة بدون ظل
+      : [],
 ),
 
               ),
@@ -443,16 +473,16 @@ AnimatedDefaultTextStyle(
     fontSize: 11,
     fontWeight: FontWeight.bold,
     color: resolvedColor,
-    shadows: strength < 0.7   // 🔥 إذا النص غير مختار
+    shadows: strength < 0.7   
         ? [
             Shadow(
-              offset: Offset(0, 0), // اتجاه الظل
-              blurRadius: 0.5,          // درجة التمويه
+              offset: Offset(0, 0), 
+              blurRadius: 0.5,         
               
-              color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1), // لون الظل
+              color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1), 
             ),
           ]
-        : [], // النص المختار بدون ظل
+        : [], 
   ),
   child: Text(widget.item.label),
 ),
@@ -495,7 +525,6 @@ class HomePage extends StatelessWidget {
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // 🔴 السويتش
             Transform.scale(
               scale: 0.8,
               child: Switch(
@@ -505,7 +534,6 @@ class HomePage extends StatelessWidget {
               ),
             ),
 
-            // 🔵 اللوجو + النص
             Row(
               children: [
                 Text(
@@ -540,13 +568,10 @@ class HomePage extends StatelessWidget {
       ),
 
       body: SingleChildScrollView(
-           physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-            child: Column(
+          physics: const ClampingScrollPhysics(),
+          child: Column(
           children: [
 
-            // 🔥 الهيدر
             Container(
               width: double.infinity,
               height: 300,
@@ -610,7 +635,6 @@ class HomePage extends StatelessWidget {
               ),
             ),
 
-            // 🔥 الكروت
             Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(vertical: 25),
@@ -634,7 +658,6 @@ class HomePage extends StatelessWidget {
 
             SizedBox(height: 30),
 
-            // 🔥 البروفايل
             Container(
               margin: EdgeInsets.symmetric(horizontal: 15),
               padding:
@@ -690,7 +713,6 @@ class HomePage extends StatelessWidget {
 
             SizedBox(height: 30),
 
-            // 🔥 المنشورات
             Column(
               children: List.generate(8, (index) {
                 return Container(
@@ -723,7 +745,6 @@ class HomePage extends StatelessWidget {
               }),
             ),
 
-            // مسافة إضافية لأسفل لعدم تغطية البار للمحتوى
             SizedBox(height: 90),
           ],
         ),
@@ -745,7 +766,7 @@ class HomePage extends StatelessWidget {
 }
 
 // ============================================================
-// 🔥 صفحة السكربتات
+//  صفحة السكربتات
 // ============================================================
 class ScriptsPage extends StatelessWidget {
   final bool isDark;
@@ -818,7 +839,6 @@ class ContactPage extends StatelessWidget {
   final bool isDark;
   const ContactPage({required this.isDark});
 
-  // 🔥 فتح روابط / ايميل
   Future<void> _openLink(String value, {bool isEmail = false}) async {
     final Uri uri;
 
@@ -878,7 +898,6 @@ class ContactPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // 🔥 كرت التعريف
               Card(
                 color: isDark
                     ? const Color.fromARGB(255, 19, 19, 19)
@@ -899,18 +918,24 @@ class ContactPage extends StatelessWidget {
                         children: [
                           Transform.translate(
                             offset: const Offset(35, 0),
-                            child: const CircleAvatar(
-                              radius: 60,
-                              backgroundImage:
-                                  AssetImage("assets/images/profile.png"),
+                            child: ClipOval(
+                              child: const ClickableImage(
+                                imagePath: "assets/images/profile.png",
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                           Transform.translate(
                             offset: const Offset(-35, 0),
-                            child: const CircleAvatar(
-                              radius: 60,
-                              backgroundImage:
-                                  AssetImage("assets/images/icon.png"),
+                            child: ClipOval(
+                              child: const ClickableImage(
+                                imagePath: "assets/images/icon.png",
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                         ],
@@ -943,7 +968,6 @@ class ContactPage extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // 🔥 الإيميل
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.email, color: Colors.red),
@@ -953,7 +977,6 @@ class ContactPage extends StatelessWidget {
                     _openLink("info@scrptaty.com", isEmail: true),
               ),
 
-              // 🔥 الموقع
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.language, color: Colors.blue),
@@ -962,7 +985,6 @@ class ContactPage extends StatelessWidget {
                 onTap: () => _openLink("https://scrptaty.com"),
               ),
 
-              // 🔥 انستكرام
                _buildCard(
                 isDark,
                 icon: ShaderMask(
@@ -989,7 +1011,6 @@ class ContactPage extends StatelessWidget {
                     _openLink("https://instagram.com/Eng.mu7med"),
               ),
 
-              // 🔥 تلغرام
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.send, color: Colors.blueAccent),
@@ -998,7 +1019,6 @@ class ContactPage extends StatelessWidget {
                 onTap: () => _openLink("https://t.me/Mooo5"),
               ),
 
-              // 🔥 واتساب
               _buildCard(
                 isDark,
                 icon: const Icon(FontAwesomeIcons.whatsapp,
@@ -1008,6 +1028,7 @@ class ContactPage extends StatelessWidget {
                 onTap: () =>
                     _openLink("https://wa.me/9647726537514"),
               ),
+              const SizedBox(height: 100),
             ],
           ),
         ),
@@ -1015,11 +1036,9 @@ class ContactPage extends StatelessWidget {
     );
   }
 
-  // 🔥 الكرت مع تأثير الضغط
-    // 🔥 الكرت (عدلناه يستقبل Widget)
   Widget _buildCard(
     bool isDark, {
-    required Widget icon, // 🔥 مهم
+    required Widget icon, 
     required String title,
     required String subtitle,
     required VoidCallback onTap,
@@ -1074,11 +1093,233 @@ class ContactPage extends StatelessWidget {
   }
 }
 // ============================================================
-// 🔥 صفحة الإعدادات
+//  صفحة الإعدادات
 // ============================================================
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   final bool isDark;
-  const SettingsPage({required this.isDark});
+  final VoidCallback onToggle;
+  const SettingsPage({required this.isDark, required this.onToggle});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  bool notificationsEnabled = false;
+
+  Future<void> _openLink(String value) async {
+    final uri = Uri.parse(value);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _showDonationSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.5,
+          minChildSize: 0.3,
+          maxChildSize: 0.95,
+          snap: true,
+          snapSizes: [0.3, 0.5, 0.95],
+          builder: (context, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: widget.isDark
+                    ? const Color(0xFF1A1A1A)
+                    : Colors.white,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(30),
+                  topRight: Radius.circular(30),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Container(
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(2.5),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                      children: [
+                        Text(
+                          'التبرع والدعم',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: widget.isDark ? Colors.white : Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        Center(
+                          child: Text(
+                            ' MOHAMMED RAHEEM MOHAMMED',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: widget.isDark ? Colors.white : Colors.black,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                  Center(
+  child: ClipRRect(
+    borderRadius: BorderRadius.circular(20),
+    child: SizedBox(
+      width: 300,
+      height: 190,
+      child: Image.asset(
+        'assets/images/mastercard.png',
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: Colors.transparent,
+            child: Center(
+              child: Icon(
+                Icons.credit_card,
+                size: 0,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+  ),
+),
+                        const SizedBox(height: 32),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: widget.isDark
+                                ? Colors.white.withOpacity(0.05)
+                                : Colors.red.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.red.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.favorite,
+                                color: Colors.red,
+                                size: 32,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'شكراً لدعمك!',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Tajawal',
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'تبرعك يساعد في تطوير تطبيقات أفضل ومحتوى عالي الجودة.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Tajawal',
+                                  fontSize: 14,
+                                  color: widget.isDark ? Colors.white70 : Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text(
+                            'تم الفهم',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCard({
+    required Widget child,
+    VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          splashColor: Colors.red.withOpacity(0.2),
+          highlightColor: Colors.red.withOpacity(0.08),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: widget.isDark
+                  ? const Color(0xFF1A1A1A)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: widget.isDark
+                    ? const Color.fromARGB(120, 255, 255, 255)
+                    : const Color.fromARGB(80, 0, 0, 0),
+                width: 0.5,
+              ),
+              boxShadow: [
+                if (!widget.isDark)
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1086,10 +1327,10 @@ class SettingsPage extends StatelessWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor:
-            isDark ? const Color(0xFF111111) : Colors.grey[100],
+            widget.isDark ? const Color(0xFF111111) : const Color(0xFFF4F4F4),
         appBar: AppBar(
           backgroundColor:
-              isDark ? Color.fromARGB(255, 22, 22, 22) : Colors.white,
+              widget.isDark ? const Color(0xFF161616) : Colors.white,
           automaticallyImplyLeading: false,
           title: Text(
             'الإعدادات',
@@ -1097,40 +1338,249 @@ class SettingsPage extends StatelessWidget {
               fontFamily: 'Tajawal',
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black,
+              color: widget.isDark ? Colors.white : Colors.black,
             ),
           ),
-          bottom: PreferredSize(
+          bottom: const PreferredSize(
             preferredSize: Size.fromHeight(1),
-            child: Container(height: 1, color: Colors.red),
+            child: Divider(height: 1, color: Colors.red),
           ),
         ),
-        body: Center(
+        body: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.all(16),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.settings_rounded,
-                  size: 80,
-                  color: Colors.grey.withOpacity(0.4)),
-              SizedBox(height: 20),
               Text(
-                'الإعدادات',
+                'إعدادات التطبيق',
                 style: TextStyle(
                   fontFamily: 'Tajawal',
-                  fontSize: 26,
+                  fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black,
+                  color: widget.isDark ? Colors.white : Colors.black,
                 ),
               ),
-              SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
-                'تحكم في إعدادات التطبيق والتفضيلات الشخصية',
+                'هنا يمكنك التحكم في خيارات التطبيق الأساسية  .',
                 style: TextStyle(
                   fontFamily: 'Tajawal',
                   fontSize: 15,
-                  color: isDark ? Colors.white54 : Colors.black54,
+                  color: widget.isDark ? Colors.white70 : Colors.black54,
                 ),
-                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              _buildCard(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(255, 214, 42, 42),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'سكربتاتي',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'الإصدار 1.0.0',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              _buildCard(
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor:
+                          widget.isDark ? Colors.white12 : Colors.red.shade50,
+                      child: const Icon(
+                        Icons.palette,
+                        color: Colors.red,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'لون الثيم',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: widget.isDark ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.isDark
+                                ? 'وضع داكن مفعل'
+                                : 'الوضع الفاتح مفعل',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 14,
+                              color:
+                                  widget.isDark ? Colors.white70 : Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: widget.isDark,
+                      onChanged: (_) => widget.onToggle(),
+                      activeColor: Colors.red,
+                      activeTrackColor: Colors.redAccent.withOpacity(0.4),
+                    ),
+                  ],
+                ),
+              ),
+
+              _buildCard(
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor:
+                          widget.isDark ? Colors.white12 : Colors.red.shade50,
+                      child: const Icon(
+                        Icons.favorite,
+                        color: Colors.red,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'التبرع',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: widget.isDark ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'ادعم تطوير التطبيق والمحتوى المستقبلي.',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 14,
+                              color:
+                                  widget.isDark ? Colors.white70 : Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: () => _showDonationSheet(context),
+                      child: const Text('تبرع الآن'),
+                    ),
+                  ],
+                ),
+              ),
+
+              _buildCard(
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor:
+                          widget.isDark ? Colors.white12 : const Color.fromARGB(255, 255, 235, 235),
+                      child: const Icon(
+                        Icons.notifications_active,
+                        color: Colors.red,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'الإشعارات',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: widget.isDark ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            notificationsEnabled
+                                ? 'تم تفعيل الإشعارات'
+                                : 'الإشعارات متوقفة',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 14,
+                              color:
+                                  widget.isDark ? Colors.white70 : Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: notificationsEnabled,
+                      onChanged: (value) {
+                        setState(() {
+                          notificationsEnabled = value;
+                        });
+                      },
+                      activeColor: Colors.red,
+                      activeTrackColor: Colors.redAccent.withOpacity(0.4),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1219,14 +1669,9 @@ class _HoverCardState extends State<_HoverCard> {
   }
 }
 
-// ============================================================
-// 🔥 Notifier مشترك لتمرير قيمة السحب للـ Route
-// ============================================================
+
 final _globalDragNotifier = ValueNotifier<double>(0);
 
-// ============================================================
-// 🔥 Route مخصص: الصفحة تدخل من اليسار
-// ============================================================
 class _SlideFromLeftRoute extends PageRouteBuilder {
   final Widget page;
 
@@ -1266,9 +1711,6 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
         );
 }
 
-// ============================================================
-// 🔥 Wrapper يدعم السحب من اليمين لليسار للإغلاق
-// ============================================================
 class _SwipeToCloseWrapper extends StatefulWidget {
   final Widget child;
   const _SwipeToCloseWrapper({required this.child});
@@ -1331,9 +1773,6 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
   }
 }
 
-// ============================================================
-// 🔥 صفحات الكروت الداخلية (استضافة، متاجر، تطبيقات)
-// ============================================================
 class HostingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1356,9 +1795,6 @@ class AppsPage extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 🔥 صفحة داخلية مشتركة للكروت
-// ============================================================
 Widget _innerPage(BuildContext context, String title, String text) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -1417,9 +1853,6 @@ Widget _innerPage(BuildContext context, String title, String text) {
   );
 }
 
-// ============================================================
-// 🔥 ClickableImage
-// ============================================================
 class ClickableImage extends StatelessWidget {
   final String imagePath;
   final double? height;
@@ -1462,9 +1895,6 @@ class ClickableImage extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 🔥 ImageViewer
-// ============================================================
 class ImageViewer extends StatefulWidget {
   final String imagePath;
   const ImageViewer({required this.imagePath});
@@ -1525,7 +1955,6 @@ class _ImageViewerState extends State<ImageViewer>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 🔥 الخلفية
           GestureDetector(
             onTap: close,
             child: BackdropFilter(
@@ -1541,7 +1970,6 @@ class _ImageViewerState extends State<ImageViewer>
             ),
           ),
 
-          // 📸 الصورة
           Center(
             child: GestureDetector(
               onVerticalDragUpdate: (details) {
@@ -1582,9 +2010,6 @@ class _ImageViewerState extends State<ImageViewer>
   }
 }
 
-// ============================================================
-// 🔥 SplashScreen
-// ============================================================
 
 
 class SplashScreen extends StatefulWidget {
@@ -1598,14 +2023,13 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> scaleAnimation;
   late Animation<double> fadeAnimation;
   bool isDark = true;
-  final player = AudioPlayer(); // ✅ مشغل الصوت
+  final player = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
     loadTheme();
 
-    // ✅ تشغيل الصوت عند بداية السبلاش
     player.play(AssetSource("sounds/start.mp3"));
 
     controller = AnimationController(
@@ -1643,7 +2067,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    player.dispose(); // ✅ تنظيف مشغل الصوت
+    player.dispose(); 
     controller.dispose();
     super.dispose();
   }
