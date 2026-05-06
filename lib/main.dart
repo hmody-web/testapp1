@@ -1831,14 +1831,17 @@ appBar: AppBar(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   if (post.title.isNotEmpty)
-                    Text(
-                      post.title,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        post.title,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
                       ),
                     ),
                   if (post.title.isNotEmpty && post.description.isNotEmpty)
@@ -2027,6 +2030,16 @@ Future<List<AppItem>> fetchApps() async {
 // دالة تحميل الملف
 Future<void> downloadFile(String fileUrl, String fileName) async {
   try {
+    // طلب الإذن أولاً
+    var status = await Permission.storage.status;
+    if (!status.isGranted) {
+      status = await Permission.storage.request();
+    }
+    
+    if (!status.isGranted) {
+      throw Exception('لم يتم منح إذن الوصول إلى التخزين');
+    }
+    
     final uri = Uri.parse(fileUrl);
     final response = await http.get(uri);
     
@@ -2037,11 +2050,10 @@ Future<void> downloadFile(String fileUrl, String fileName) async {
     final bytes = response.bodyBytes;
     
     if (kIsWeb) {
-      // للتحميل في الويب - استخدام dart:js
       throw UnimplementedError('Web download not implemented yet');
     } else {
-      // للتحميل في الموبايل والديسكتوب - حفظ في مجلد التحميلات
-      final directory = await getApplicationDocumentsDirectory();
+      // حفظ في مجلد التحميلات العام
+      final directory = await _getDownloadDirectory();
       final file = io.File('${directory.path}/$fileName');
       await file.writeAsBytes(bytes);
     }
@@ -2051,17 +2063,17 @@ Future<void> downloadFile(String fileUrl, String fileName) async {
   }
 }
 
-Future<io.Directory> getApplicationDocumentsDirectory() async {
+Future<io.Directory> _getDownloadDirectory() async {
   if (io.Platform.isAndroid) {
-    // على الأندرويد، نحفظ في مجلد التحميلات
-    final directory = io.Directory('/storage/emulated/0/Download');
+    // على الأندرويد، نحفظ في مجلد التحميلات العام
+    final directory = io.Directory('/storage/emulated/0/Download/Scrptaty');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
     return directory;
   } else if (io.Platform.isIOS) {
     // على iOS، نحفظ في مجلد المستندات
-    final paths = await getApplicationDocumentsPath();
+    final paths = await getApplicationDocumentsPathIOS();
     return io.Directory(paths);
   } else if (io.Platform.isWindows) {
     // على ويندوز، نحفظ في مجلد التحميلات
@@ -2073,24 +2085,39 @@ Future<io.Directory> getApplicationDocumentsDirectory() async {
   } else if (io.Platform.isMacOS || io.Platform.isLinux) {
     // على ماك ولينكس، نحفظ في مجلد التحميلات
     final homeDir = io.Platform.environment['HOME'] ?? '.';
-    final directory = io.Directory('$homeDir/Downloads');
+    final directory = io.Directory('$homeDir/Downloads/Scrptaty');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
     return directory;
   }
   
-  //fallback
+  // fallback
   return io.Directory.current;
+}
+
+Future<String> getApplicationDocumentsPathIOS() async {
+  // دالة مساعدة للحصول على مسار مجلد المستندات على iOS
+  if (io.Platform.isIOS) {
+    // استخدام path_provider للحصول على المسار
+    return (await getApplicationDocumentsDirectoryIOS()).path;
+  }
+  return (await getApplicationDocumentsDirectoryIOS()).path;
+}
+
+Future<io.Directory> getApplicationDocumentsDirectoryIOS() async {
+  // على iOS نستخدم مجلد المستندات
+  final paths = await getApplicationDocumentsPath();
+  return io.Directory(paths);
 }
 
 Future<String> getApplicationDocumentsPath() async {
   // دالة مساعدة للحصول على مسار مجلد المستندات
   if (io.Platform.isIOS) {
     // على iOS
-    return (await getApplicationDocumentsDirectory()).path;
+    return (await getApplicationDocumentsDirectoryIOS()).path;
   }
-  return (await getApplicationDocumentsDirectory()).path;
+  return (await getApplicationDocumentsDirectoryIOS()).path;
 }
 
 class ScriptsPage extends StatefulWidget {
