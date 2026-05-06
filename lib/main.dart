@@ -275,6 +275,8 @@ class _MainShellState extends State<MainShell> {
   late final PageController _pageController;
   final List<GlobalKey> _pageKeys = List.generate(4, (_) => GlobalKey());
   double _homeScrollOffset = 0.0;
+  VoidCallback? _homeScrollToTopCallback;
+  Function(VoidCallback)? _registerHomeScrollCallback;
 
   final List<_NavItem> _items = [
     _NavItem(
@@ -349,8 +351,10 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _scrollToTop() {
-    // Will be called from HomePage via callback
-    // For now, we use PageStorageKey which preserves scroll position
+    // Use callback to scroll to top in HomePage
+    if (_homeScrollToTopCallback != null) {
+      _homeScrollToTopCallback!();
+    }
   }
 
   void _restoreHomeScrollOffset() {
@@ -370,7 +374,13 @@ class _MainShellState extends State<MainShell> {
           _currentPage = i.toDouble();
         }),
         children: [
-          HomePage(isDark: widget.isDark, onToggle: widget.onToggle),
+          HomePage(
+            isDark: widget.isDark, 
+            onToggle: widget.onToggle,
+            onRegisterScrollCallback: (callback) {
+              _homeScrollToTopCallback = callback;
+            },
+          ),
           ScriptsPage(isDark: widget.isDark),
           ContactPage(isDark: widget.isDark),
           SettingsPage(isDark: widget.isDark, onToggle: widget.onToggle),
@@ -958,8 +968,13 @@ class PostNotificationMonitor {
 class HomePage extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggle;
+  final Function(VoidCallback)? onRegisterScrollCallback;
 
-  const HomePage({required this.isDark, required this.onToggle});
+  const HomePage({
+    required this.isDark, 
+    required this.onToggle,
+    this.onRegisterScrollCallback,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -976,6 +991,21 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    // Register scroll callback with parent
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.onRegisterScrollCallback != null) {
+        widget.onRegisterScrollCallback!(() {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              0.0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          }
+        });
+      }
+    });
+    
     _postsFuture = _loadPosts();
     _experienceController = AnimationController(
       vsync: this,
@@ -1100,7 +1130,7 @@ class _HomePageState extends State<HomePage>
           child: SingleChildScrollView(
             key: const PageStorageKey('home_scroll_position'),
             controller: _scrollController,
-            physics: const BouncingScrollPhysics(
+            physics: const ClampingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
             ),
             child: Column(
