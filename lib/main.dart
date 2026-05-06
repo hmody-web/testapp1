@@ -273,6 +273,8 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   double _currentPage = 0.0;
   late final PageController _pageController;
+  final List<GlobalKey> _pageKeys = List.generate(4, (_) => GlobalKey());
+  double _homeScrollOffset = 0.0;
 
   final List<_NavItem> _items = [
     _NavItem(
@@ -318,14 +320,41 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onTabTap(int index) {
+    if (index == _currentIndex) {
+      // نفس الصفحة
+      if (index == 0) {
+        // الصفحة الرئيسية - ننزل لفوق
+        _scrollToTop();
+      }
+      return;
+    }
+    
+    // حفظ موقع السكرول للصفحة الحالية
+    if (_currentIndex == 0) {
+      _saveHomeScrollOffset();
+    }
+    
     setState(() {
       _currentIndex = index;
     });
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
     );
+  }
+
+  void _saveHomeScrollOffset() {
+    // Will be called from HomePage via callback
+  }
+
+  void _scrollToTop() {
+    // Will be called from HomePage via callback
+    // For now, we use PageStorageKey which preserves scroll position
+  }
+
+  void _restoreHomeScrollOffset() {
+    // Will be called from HomePage via callback
   }
 
   @override
@@ -2097,17 +2126,17 @@ class _ScriptsPageState extends State<ScriptsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // قسم السكربتات
-                  _buildSectionHeader('السكربتات', isDark),
-                  const SizedBox(height: 16),
-                  _buildScriptsSection(isDark),
-                  
-                  const SizedBox(height: 32),
-                  
                   // قسم التطبيقات
                   _buildSectionHeader('التطبيقات', isDark),
                   const SizedBox(height: 16),
                   _buildAppsSection(isDark),
+                  
+                  const SizedBox(height: 32),
+                  
+                  // قسم السكربتات
+                  _buildSectionHeader('السكربتات', isDark),
+                  const SizedBox(height: 16),
+                  _buildScriptsSection(isDark),
                 ],
               ),
             ),
@@ -2161,21 +2190,97 @@ class _ScriptsPageState extends State<ScriptsPage> {
           return _buildEmptyMessage('لا توجد سكربتات حالياً');
         }
 
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 0.8,
-          ),
-          itemCount: scripts.length,
-          itemBuilder: (context, index) {
-            return _buildScriptCard(scripts[index], isDark);
-          },
+        return Column(
+          children: scripts
+              .map((script) => _buildFullWidthScriptCard(script, isDark))
+              .toList(),
         );
       },
+    );
+  }
+
+  Widget _buildFullWidthScriptCard(ScriptItem script, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // الصورة - تأخذ عرض كامل
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: script.imageUrl.isNotEmpty
+                  ? Image.network(
+                      script.encodedImageUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          color: isDark
+                              ? const Color.fromARGB(255, 32, 32, 32)
+                              : Colors.grey[300],
+                          child: const Center(
+                            child: CircularProgressIndicator(color: Colors.red),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: isDark
+                              ? const Color.fromARGB(255, 32, 32, 32)
+                              : Colors.grey[300],
+                          child: const Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.red,
+                              size: 50,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : Container(
+                      color: isDark
+                          ? const Color.fromARGB(255, 32, 32, 32)
+                          : Colors.grey[300],
+                      child: const Center(
+                        child: Icon(Icons.image, color: Colors.grey, size: 50),
+                      ),
+                    ),
+            ),
+            // العنوان - في المنتصف
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                script.title,
+                style: const TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
