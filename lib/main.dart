@@ -18,6 +18,7 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -2046,21 +2047,57 @@ Future<void> downloadFile(
   print('  File: $fileName');
 
   try {
+    // طلب الأذونات
     PermissionStatus status;
+    
     if (io.Platform.isIOS) {
       status = await Permission.photos.status;
+      print('  iOS photos permission status: $status');
+      
       if (!status.isGranted) {
+        print('  Requesting iOS photos permission...');
         status = await Permission.photos.request();
+        print('  After request: $status');
+      }
+    } else if (io.Platform.isAndroid) {
+      // في Android 11+، نحتاج إلى MANAGE_EXTERNAL_STORAGE أو نستخدم app-specific directory
+      status = await Permission.storage.status;
+      print('  Android storage permission status: $status');
+      
+      if (!status.isGranted) {
+        print('  Requesting Android storage permission...');
+        status = await Permission.storage.request();
+        print('  After request: $status');
+      }
+      
+      // إذا تم رفض الأذن، نحاول استخدام app-specific directory
+      if (status.isDenied || status.isDeniedForever) {
+        print('  Storage permission denied, using app-specific directory...');
+        // سنستخدم app-specific directory الذي لا يحتاج أذن
+        final directory = await _getAppSpecificDirectory();
+        final cleanFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+        final file = io.File('${directory.path}/$cleanFileName');
+        await _downloadAndSaveFile(fileUrl, file, onProgress);
+        return;
       }
     } else {
       status = await Permission.storage.status;
+      print('  Storage permission status: $status');
+      
       if (!status.isGranted) {
+        print('  Requesting storage permission...');
         status = await Permission.storage.request();
+        print('  After request: $status');
       }
     }
 
+    // التحقق النهائي من الأذن
     if (!status.isGranted) {
-      throw Exception('لم يتم منح إذن الوصول إلى التخزين');
+      if (status.isDeniedForever) {
+        throw Exception('تم رفض إذن الوصول إلى التخزين نهائياً. يرجى تفعيلها من الإعدادات.');
+      } else {
+        throw Exception('لم يتم منح إذن الوصول إلى التخزين');
+      }
     }
 
     // تنظيف اسم الملف من الأحرف الخاصة
@@ -2071,60 +2108,84 @@ Future<void> downloadFile(
 
     print('  Clean filename: $cleanFileName');
 
-    final uri = Uri.parse(fileUrl);
-    final client = http.Client();
-
-    try {
-      final request = http.Request('GET', uri);
-      print('  Sending request...');
-      final streamedResponse = await client.send(request).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('انتهت مهلة التحميل (30 ثانية)');
-        },
-      );
-
-      print('  Response status: ${streamedResponse.statusCode}');
-
-      if (streamedResponse.statusCode != 200) {
-        throw Exception('فشل تحميل الملف: ${streamedResponse.statusCode}');
-      }
-
-      final totalBytes = streamedResponse.contentLength;
-      print('  Total bytes: $totalBytes');
-
-      final bytes = <int>[];
-      var receivedBytes = 0;
-
-      await for (final chunk in streamedResponse.stream) {
-        bytes.addAll(chunk);
-        receivedBytes += chunk.length;
-        if (onProgress != null) {
-          onProgress(totalBytes != null && totalBytes > 0
-              ? receivedBytes / totalBytes
-              : null);
-        }
-      }
-
-      print('  Received: $receivedBytes bytes');
-
-      if (bytes.isEmpty) {
-        throw Exception('الملف المحمّل فارغ');
-      }
-
-      final directory = await _getDownloadDirectory();
-      final file = io.File('${directory.path}/$cleanFileName');
-      await file.writeAsBytes(bytes);
-      
-      print('  Saved to: ${file.path}');
-      print('Download completed successfully!');
-    } finally {
-      client.close();
-    }
+    final directory = await _getDownloadDirectory();
+    final file = io.File('${directory.path}/$cleanFileName');
+    
+    await _downloadAndSaveFile(fileUrl, file, onProgress);
   } catch (e) {
     print('Error downloading file: $e');
     rethrow;
   }
+}
+
+Future<void> _downloadAndSaveFile(
+  String fileUrl,
+  io.File file,
+  void Function(double?)? onProgress,
+) async {
+  final uri = Uri.parse(fileUrl);
+  final client = http.Client();
+
+  try {
+    final request = http.Request('GET', uri);
+    print('  Sending request...');
+    final streamedResponse = await client.send(request).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        throw Exception('انتهت مهلة التحميل (30 ثانية)');
+      },
+    );
+
+    print('  Response status: ${streamedResponse.statusCode}');
+
+    if (streamedResponse.statusCode != 200) {
+      throw Exception('فشل تحميل الملف: ${streamedResponse.statusCode}');
+    }
+
+    final totalBytes = streamedResponse.contentLength;
+    print('  Total bytes: $totalBytes');
+
+    final bytes = <int>[];
+    var receivedBytes = 0;
+
+    await for (final chunk in streamedResponse.stream) {
+      bytes.addAll(chunk);
+      receivedBytes += chunk.length;
+      if (onProgress != null) {
+        onProgress(totalBytes != null && totalBytes > 0
+            ? receivedBytes / totalBytes
+            : null);
+      }
+    }
+
+    print('  Received: $receivedBytes bytes');
+
+    if (bytes.isEmpty) {
+      throw Exception('الملف المحمّل فارغ');
+    }
+
+    // التأكد من وجود المجلد
+    final directory = file.parent;
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+
+    await file.writeAsBytes(bytes);
+    
+    print('  Saved to: ${file.path}');
+    print('Download completed successfully!');
+  } finally {
+    client.close();
+  }
+}
+
+Future<io.Directory> _getAppSpecificDirectory() async {
+  final appDir = await getApplicationDocumentsDirectory();
+  final downloadDir = io.Directory('${appDir.path}/Downloads');
+  if (!await downloadDir.exists()) {
+    await downloadDir.create(recursive: true);
+  }
+  return downloadDir;
 }
 
 Future<io.Directory> _getDownloadDirectory() async {
