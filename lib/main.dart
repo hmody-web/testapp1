@@ -2071,7 +2071,7 @@ Future<void> downloadFile(
       }
       
       // إذا تم رفض الأذن، نحاول استخدام app-specific directory
-      if (status.isDenied || status.isDeniedForever) {
+      if (status.isDenied || status.isPermanentlyDenied) {
         print('  Storage permission denied, using app-specific directory...');
         // سنستخدم app-specific directory الذي لا يحتاج أذن
         final directory = await _getAppSpecificDirectory();
@@ -2093,7 +2093,7 @@ Future<void> downloadFile(
 
     // التحقق النهائي من الأذن
     if (!status.isGranted) {
-      if (status.isDeniedForever) {
+      if (status.isPermanentlyDenied) {
         throw Exception('تم رفض إذن الوصول إلى التخزين نهائياً. يرجى تفعيلها من الإعدادات.');
       } else {
         throw Exception('لم يتم منح إذن الوصول إلى التخزين');
@@ -4889,8 +4889,10 @@ class _NetworkImageViewerState extends State<NetworkImageViewer>
 }
 
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({Key? key}) : super(key: key);
+
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen>
