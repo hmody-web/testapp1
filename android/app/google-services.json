@@ -12,7 +12,12 @@
           "package_name": "com.scrptaty.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "279825670275-q96u7qfm4uqqa1o1r2unllccvemoo78f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA0DSdjGIW3SwYne40M9jx2HIWEJ1ggrYw"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "279825670275-q96u7qfm4uqqa1o1r2unllccvemoo78f.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "279825670275-8ef1doej7etpgjohqcoceettaf2vngb6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.scrptaty.app"
+              }
+            }
+          ]
         }
       }
     }

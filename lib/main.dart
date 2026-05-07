@@ -22,6 +22,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'firebase_options.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -180,27 +181,29 @@ class NotificationService {
   }
 }
 
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Firebase
+
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
     print('Firebase initialized successfully');
   } catch (e) {
-    // Firebase might already be initialized
     print('Firebase initialization error: $e');
   }
-  
-  // Verify Firebase is initialized before using auth
+
   if (Firebase.apps.isEmpty) {
     print('ERROR: No Firebase apps initialized!');
   } else {
     print('Firebase apps: ${Firebase.apps.map((app) => app.name).toList()}');
   }
-  
+
   tz.initializeTimeZones();
   await NotificationService.initialize();
+
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
