@@ -2028,34 +2028,63 @@ Future<List<AppItem>> fetchApps() async {
 }
 
 // دالة تحميل الملف
-Future<void> downloadFile(String fileUrl, String fileName) async {
+Future<void> downloadFile(
+  String fileUrl,
+  String fileName, {
+  void Function(double?)? onProgress,
+}) async {
+  if (kIsWeb) {
+    throw UnimplementedError('Web download not implemented yet');
+  }
+
   try {
-    // طلب الإذن أولاً
-    var status = await Permission.storage.status;
-    if (!status.isGranted) {
-      status = await Permission.storage.request();
+    PermissionStatus status;
+    if (io.Platform.isIOS) {
+      status = await Permission.photos.status;
+      if (!status.isGranted) {
+        status = await Permission.photos.request();
+      }
+    } else {
+      status = await Permission.storage.status;
+      if (!status.isGranted) {
+        status = await Permission.storage.request();
+      }
     }
-    
+
     if (!status.isGranted) {
       throw Exception('لم يتم منح إذن الوصول إلى التخزين');
     }
-    
+
     final uri = Uri.parse(fileUrl);
-    final response = await http.get(uri);
-    
-    if (response.statusCode != 200) {
-      throw Exception('Failed to download file');
-    }
-    
-    final bytes = response.bodyBytes;
-    
-    if (kIsWeb) {
-      throw UnimplementedError('Web download not implemented yet');
-    } else {
-      // حفظ في مجلد التحميلات العام
+    final client = http.Client();
+
+    try {
+      final request = http.Request('GET', uri);
+      final streamedResponse = await client.send(request);
+
+      if (streamedResponse.statusCode != 200) {
+        throw Exception('Failed to download file');
+      }
+
+      final totalBytes = streamedResponse.contentLength;
+      final bytes = <int>[];
+      var receivedBytes = 0;
+
+      await for (final chunk in streamedResponse.stream) {
+        bytes.addAll(chunk);
+        receivedBytes += chunk.length;
+        if (onProgress != null) {
+          onProgress(totalBytes != null && totalBytes > 0
+              ? receivedBytes / totalBytes
+              : null);
+        }
+      }
+
       final directory = await _getDownloadDirectory();
       final file = io.File('${directory.path}/$fileName');
       await file.writeAsBytes(bytes);
+    } finally {
+      client.close();
     }
   } catch (e) {
     print('Error downloading file: $e');
@@ -2065,59 +2094,31 @@ Future<void> downloadFile(String fileUrl, String fileName) async {
 
 Future<io.Directory> _getDownloadDirectory() async {
   if (io.Platform.isAndroid) {
-    // على الأندرويد، نحفظ في مجلد التحميلات العام
     final directory = io.Directory('/storage/emulated/0/Download/Scrptaty');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
     return directory;
-  } else if (io.Platform.isIOS) {
-    // على iOS، نحفظ في مجلد المستندات
-    final paths = await getApplicationDocumentsPathIOS();
-    return io.Directory(paths);
-  } else if (io.Platform.isWindows) {
-    // على ويندوز، نحفظ في مجلد التحميلات
+  }
+
+  if (io.Platform.isWindows) {
     final directory = io.Directory('${io.Directory.current.path}/downloads');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
     return directory;
-  } else if (io.Platform.isMacOS || io.Platform.isLinux) {
-    // على ماك ولينكس، نحفظ في مجلد التحميلات
-    final homeDir = io.Platform.environment['HOME'] ?? '.';
+  }
+
+  if (io.Platform.isMacOS || io.Platform.isLinux || io.Platform.isIOS) {
+    final homeDir = io.Platform.environment['HOME'] ?? io.Directory.current.path;
     final directory = io.Directory('$homeDir/Downloads/Scrptaty');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
     return directory;
   }
-  
-  // fallback
+
   return io.Directory.current;
-}
-
-Future<String> getApplicationDocumentsPathIOS() async {
-  // دالة مساعدة للحصول على مسار مجلد المستندات على iOS
-  if (io.Platform.isIOS) {
-    // استخدام path_provider للحصول على المسار
-    return (await getApplicationDocumentsDirectoryIOS()).path;
-  }
-  return (await getApplicationDocumentsDirectoryIOS()).path;
-}
-
-Future<io.Directory> getApplicationDocumentsDirectoryIOS() async {
-  // على iOS نستخدم مجلد المستندات
-  final paths = await getApplicationDocumentsPath();
-  return io.Directory(paths);
-}
-
-Future<String> getApplicationDocumentsPath() async {
-  // دالة مساعدة للحصول على مسار مجلد المستندات
-  if (io.Platform.isIOS) {
-    // على iOS
-    return (await getApplicationDocumentsDirectoryIOS()).path;
-  }
-  return (await getApplicationDocumentsDirectoryIOS()).path;
 }
 
 class ScriptsPage extends StatefulWidget {
@@ -2128,9 +2129,13 @@ class ScriptsPage extends StatefulWidget {
   State<ScriptsPage> createState() => _ScriptsPageState();
 }
 
-class _ScriptsPageState extends State<ScriptsPage> {
+class _ScriptsPageState extends State<ScriptsPage>
+    with AutomaticKeepAliveClientMixin {
   late Future<List<ScriptItem>> _scriptsFuture;
   late Future<List<AppItem>> _appsFuture;
+  final Map<String, double> _downloadProgress = {};
+  final Set<String> _downloadingFiles = {};
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -2139,11 +2144,75 @@ class _ScriptsPageState extends State<ScriptsPage> {
     _appsFuture = fetchApps();
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _refreshData() async {
     setState(() {
       _scriptsFuture = fetchScripts();
       _appsFuture = fetchApps();
     });
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  Future<void> _downloadAppFile(AppItem app) async {
+    final appId = app.id;
+    final fileName = Uri.tryParse(app.fileUrl)?.pathSegments.last ?? app.title;
+
+    setState(() {
+      _downloadingFiles.add(appId);
+      _downloadProgress[appId] = 0.0;
+    });
+
+    try {
+      await downloadFile(
+        app.fileUrl,
+        fileName,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _downloadProgress[appId] = progress ?? 0.0;
+          });
+        },
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم تحميل ${app.title} بنجاح'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تحميل ${app.title}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadingFiles.remove(appId);
+          _downloadProgress.remove(appId);
+        });
+      }
+    }
   }
 
   @override
@@ -2177,6 +2246,8 @@ class _ScriptsPageState extends State<ScriptsPage> {
           color: Colors.red,
           backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
           child: SingleChildScrollView(
+            key: const PageStorageKey('scriptsScroll'),
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -2194,6 +2265,7 @@ class _ScriptsPageState extends State<ScriptsPage> {
                   _buildSectionHeader('السكربتات', isDark),
                   const SizedBox(height: 16),
                   _buildScriptsSection(isDark),
+                  const SizedBox(height: 90),
                 ],
               ),
             ),
@@ -2448,8 +2520,9 @@ class _ScriptsPageState extends State<ScriptsPage> {
 
   Widget _buildAppCard(AppItem app, bool isDark) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 10),
+      constraints: const BoxConstraints(minHeight: 86),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -2459,22 +2532,23 @@ class _ScriptsPageState extends State<ScriptsPage> {
         ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // صورة التطبيق
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: app.imageUrl.isNotEmpty
                 ? SizedBox(
-                    width: 60,
-                    height: 60,
+                    width: 52,
+                    height: 52,
                     child: Image.network(
                       app.encodedImageUrl,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, progress) {
                         if (progress == null) return child;
                         return Container(
-                          width: 60,
-                          height: 60,
+                          width: 52,
+                          height: 52,
                           color: isDark
                               ? const Color.fromARGB(255, 32, 32, 32)
                               : Colors.grey[300],
@@ -2488,8 +2562,8 @@ class _ScriptsPageState extends State<ScriptsPage> {
                       },
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
-                          width: 60,
-                          height: 60,
+                          width: 52,
+                          height: 52,
                           color: isDark
                               ? const Color.fromARGB(255, 32, 32, 32)
                               : Colors.grey[300],
@@ -2503,8 +2577,8 @@ class _ScriptsPageState extends State<ScriptsPage> {
                     ),
                   )
                 : Container(
-                    width: 60,
-                    height: 60,
+                    width: 52,
+                    height: 52,
                     decoration: BoxDecoration(
                       color: isDark
                           ? const Color.fromARGB(255, 32, 32, 32)
@@ -2533,83 +2607,44 @@ class _ScriptsPageState extends State<ScriptsPage> {
           // زر التحميل
           if (app.fileUrl.isNotEmpty)
             ElevatedButton.icon(
-              onPressed: () async {
-                if (await Vibration.hasVibrator() ?? false) {
-                  Vibration.vibrate(duration: 50);
-                }
-                
-                // إظهار حوار التحميل
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => AlertDialog(
-                    backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text(
-                          'جاري التحميل...',
-                          style: TextStyle(
-                            fontFamily: 'Tajawal',
-                            fontSize: 14,
-                            color: isDark ? Colors.white70 : Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-
-                try {
-                  final fileName = app.fileUrl.split('/').last;
-                  await downloadFile(app.fileUrl, fileName);
-                  
-                  if (context.mounted) {
-                    Navigator.pop(context); // إغلاق حوار التحميل
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('تم تحميل ${app.title} بنجاح'),
-                        backgroundColor: Colors.green,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    Navigator.pop(context); // إغلاق حوار التحميل
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('فشل تحميل ${app.title}'),
-                        backgroundColor: Colors.red,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    );
-                  }
-                }
-              },
+              onPressed: _downloadingFiles.contains(app.id)
+                  ? null
+                  : () async {
+                      if (await Vibration.hasVibrator() ?? false) {
+                        Vibration.vibrate(duration: 50);
+                      }
+                      await _downloadAppFile(app);
+                    },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-              icon: const Icon(Icons.download, size: 18),
-              label: const Text(
-                'تحميل',
-                style: TextStyle(
+              icon: _downloadingFiles.contains(app.id)
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                        value: _downloadProgress[app.id] != null &&
+                                _downloadProgress[app.id]! > 0
+                            ? _downloadProgress[app.id]
+                            : null,
+                      ),
+                    )
+                  : const Icon(Icons.download, size: 18),
+              label: Text(
+                _downloadingFiles.contains(app.id)
+                    ? (_downloadProgress[app.id] != null &&
+                            _downloadProgress[app.id]! > 0
+                        ? 'جارٍ التحميل ${(_downloadProgress[app.id]! * 100).round()}%'
+                        : 'جارٍ التحميل...')
+                    : 'تحميل',
+                style: const TextStyle(
                   fontFamily: 'Tajawal',
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
@@ -3233,24 +3268,9 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'إعدادات التطبيق',
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: widget.isDark ? Colors.white : Colors.black,
-                ),
-              ),
+
               const SizedBox(height: 8),
-              Text(
-                'هنا يمكنك التحكم في خيارات التطبيق الأساسية  .',
-                style: TextStyle(
-                  fontFamily: 'Tajawal',
-                  fontSize: 15,
-                  color: widget.isDark ? Colors.white70 : Colors.black54,
-                ),
-              ),
+            
               const SizedBox(height: 24),
               _buildCard(
                 child: Row(
@@ -3666,24 +3686,507 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
   }
 }
 
-class HostingPage extends StatelessWidget {
+class HostingPage extends StatefulWidget {
+  const HostingPage({super.key});
+
+  @override
+  State<HostingPage> createState() => _HostingPageState();
+}
+
+class _HostingPageState extends State<HostingPage> {
+  late Future<List<PostItem>> _postsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _postsFuture = fetchPosts();
+  }
+
+  Future<void> _refreshPosts() async {
+    setState(() {
+      _postsFuture = fetchPosts();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _innerPage(context, "استضافة المواقع", "تفاصيل الاستضافة...");
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor:
+              isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          elevation: 2,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_forward_ios,
+              color: isDark ? Colors.white : Colors.black,
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            'استضافة المواقع',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          actions: const [SizedBox(width: 48)],
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: ColoredBox(
+              color: Colors.red,
+              child: SizedBox(height: 1),
+            ),
+          ),
+        ),
+        body: RefreshIndicator(
+          onRefresh: _refreshPosts,
+          color: Colors.red,
+          backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
+          child: FutureBuilder<List<PostItem>>(
+            future: _postsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.red),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return _buildPageMessage(
+                    'تعذر تحميل المنشورات حالياً', isDark, Icons.error_outline);
+              }
+
+              final posts = snapshot.data ?? [];
+              if (posts.isEmpty) {
+                return _buildPageMessage('لا توجد منشورات حالياً', isDark, Icons.inbox_outlined);
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemCount: posts.length,
+                itemBuilder: (context, index) {
+                  return _buildHostingPostCard(posts[index], isDark);
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHostingPostCard(PostItem post, bool isDark) {
+    final plainDescription = stripHtmlTags(post.description)
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark ? Colors.white12 : Colors.black12,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (post.imageUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.network(
+                post.encodedImageUrl,
+                width: 90,
+                height: 90,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 90,
+                  height: 90,
+                  color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                  child: const Icon(Icons.broken_image_outlined, color: Colors.red),
+                ),
+              ),
+            ),
+          if (post.imageUrl.isNotEmpty) const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  post.title.isNotEmpty ? post.title : 'منشور جديد',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  plainDescription.isNotEmpty ? plainDescription : 'لا يوجد وصف متاح.',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 13,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageMessage(String message, bool isDark, IconData icon) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.red, size: 42),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
 class StorePage extends StatelessWidget {
+  const StorePage({super.key});
+
   @override
   Widget build(BuildContext context) {
     return _innerPage(context, "متاجر الكترونية", "تفاصيل المتاجر...");
   }
 }
 
-class AppsPage extends StatelessWidget {
+class AppsPage extends StatefulWidget {
+  const AppsPage({super.key});
+
+  @override
+  State<AppsPage> createState() => _AppsPageState();
+}
+
+class _AppsPageState extends State<AppsPage> {
+  late Future<List<AppItem>> _appsFuture;
+  final Map<String, double> _downloadProgress = {};
+  final Set<String> _downloadingFiles = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _appsFuture = fetchApps();
+  }
+
+  Future<void> _refreshApps() async {
+    setState(() {
+      _appsFuture = fetchApps();
+    });
+  }
+
+  Future<void> _downloadAppFile(AppItem app) async {
+    final appId = app.id;
+    final fileName = Uri.tryParse(app.fileUrl)?.pathSegments.last ?? app.title;
+
+    setState(() {
+      _downloadingFiles.add(appId);
+      _downloadProgress[appId] = 0.0;
+    });
+
+    try {
+      await downloadFile(
+        app.fileUrl,
+        fileName,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _downloadProgress[appId] = progress ?? 0.0;
+          });
+        },
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم تحميل ${app.title} بنجاح'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تحميل ${app.title}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadingFiles.remove(appId);
+          _downloadProgress.remove(appId);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _innerPage(context, "تطبيقات الموبايل", "تفاصيل التطبيقات...");
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF121212) : Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor:
+              isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          elevation: 2,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_forward_ios,
+              color: isDark ? Colors.white : Colors.black,
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            'تطبيقات الموبايل',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          actions: const [SizedBox(width: 48)],
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: ColoredBox(
+              color: Colors.red,
+              child: SizedBox(height: 1),
+            ),
+          ),
+        ),
+        body: RefreshIndicator(
+          onRefresh: _refreshApps,
+          color: Colors.red,
+          backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
+          child: FutureBuilder<List<AppItem>>(
+            future: _appsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.red),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return _buildPageMessage('تعذر تحميل التطبيقات حالياً', isDark, Icons.error_outline);
+              }
+
+              final apps = snapshot.data ?? [];
+              if (apps.isEmpty) {
+                return _buildPageMessage('لا توجد تطبيقات حالياً', isDark, Icons.inbox_outlined);
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemCount: apps.length,
+                itemBuilder: (context, index) {
+                  return _buildAppListCard(apps[index], isDark);
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppListCard(AppItem app, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.white12 : Colors.black12,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: app.imageUrl.isNotEmpty
+                ? SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: Image.network(
+                      app.encodedImageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: 52,
+                          height: 52,
+                          color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                          child: const Icon(Icons.broken_image_outlined, color: Colors.red),
+                        );
+                      },
+                    ),
+                  )
+                : Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.apps, color: Colors.grey),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              app.title,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: _downloadingFiles.contains(app.id)
+                ? null
+                : () async {
+                    if (await Vibration.hasVibrator() ?? false) {
+                      Vibration.vibrate(duration: 50);
+                    }
+                    await _downloadAppFile(app);
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            icon: _downloadingFiles.contains(app.id)
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                      value: _downloadProgress[app.id] != null && _downloadProgress[app.id]! > 0
+                          ? _downloadProgress[app.id]
+                          : null,
+                    ),
+                  )
+                : const Icon(Icons.download, size: 18),
+            label: Text(
+              _downloadingFiles.contains(app.id)
+                  ? (_downloadProgress[app.id] != null && _downloadProgress[app.id]! > 0
+                      ? 'جارٍ التحميل ${(_downloadProgress[app.id]! * 100).round()}%'
+                      : 'جارٍ التحميل...')
+                  : 'تحميل',
+              style: const TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageMessage(String message, bool isDark, IconData icon) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[200],
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.red, size: 42),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
