@@ -186,9 +186,17 @@ Future<void> main() async {
   // Initialize Firebase
   try {
     await Firebase.initializeApp();
+    print('Firebase initialized successfully');
   } catch (e) {
     // Firebase might already be initialized
-    print('Firebase initialization: $e');
+    print('Firebase initialization error: $e');
+  }
+  
+  // Verify Firebase is initialized before using auth
+  if (Firebase.apps.isEmpty) {
+    print('ERROR: No Firebase apps initialized!');
+  } else {
+    print('Firebase apps: ${Firebase.apps.map((app) => app.name).toList()}');
   }
   
   tz.initializeTimeZones();
@@ -3124,16 +3132,34 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _handleGoogleSignIn() async {
     if (_isSigningIn) return;
 
+    // Check if Firebase is initialized
+    if (Firebase.apps.isEmpty) {
+      print('ERROR: Firebase not initialized!');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ: لم يتم تهيئة Firebase'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _isSigningIn = true;
     });
 
     try {
+      print('Starting Google Sign-In...');
+      
       // Trigger the Google Sign-In flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      print('Google user: ${googleUser?.email ?? "null"}');
 
       if (googleUser == null) {
         // User cancelled the sign-in
+        print('User cancelled sign-in');
         if (mounted) {
           setState(() {
             _isSigningIn = false;
@@ -3145,16 +3171,23 @@ class _SettingsPageState extends State<SettingsPage> {
       // Obtain the auth details from the request
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+      print('Got auth credentials');
+
+      if (googleAuth.idToken == null) {
+        throw Exception('لم يتم الحصول على رمز المصادقة من جوجل');
+      }
 
       // Create a new credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
+      print('Created Firebase credential');
 
       // Sign in to Firebase with the Google credentials
       final userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
+      print('Firebase sign-in successful: ${userCredential.user?.email}');
 
       if (mounted) {
         setState(() {
