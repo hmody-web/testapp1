@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "279825670275",
+    "project_id": "scrptaty",
+    "storage_bucket": "scrptaty.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:279825670275:android:bb3de20098b9892c3c7bb6",
+        "android_client_info": {
+          "package_name": "com.scrptaty.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0DSdjGIW3SwYne40M9jx2HIWEJ1ggrYw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

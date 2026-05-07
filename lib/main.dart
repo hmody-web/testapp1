@@ -1,6 +1,9 @@
 ﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -179,6 +182,15 @@ class NotificationService {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    // Firebase might already be initialized
+    print('Firebase initialization: $e');
+  }
+  
   tz.initializeTimeZones();
   await NotificationService.initialize();
   runApp(
@@ -3087,11 +3099,280 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool notificationsEnabled = false;
+  bool _isSigningIn = false;
+  User? _currentUser;
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+  );
 
   @override
   void initState() {
     super.initState();
     _loadNotificationPreference();
+    _checkCurrentUser();
+  }
+
+  Future<void> _checkCurrentUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (mounted) {
+      setState(() {
+        _currentUser = user;
+      });
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    if (_isSigningIn) return;
+
+    setState(() {
+      _isSigningIn = true;
+    });
+
+    try {
+      // Trigger the Google Sign-In flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        if (mounted) {
+          setState(() {
+            _isSigningIn = false;
+          });
+        }
+        return;
+      }
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credentials
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+
+      if (mounted) {
+        setState(() {
+          _currentUser = userCredential.user;
+          _isSigningIn = false;
+        });
+
+        // Show success message
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('تم تسجيل الدخول بنجاح: ${userCredential.user?.displayName}'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Google Sign-In Error: $e');
+      if (mounted) {
+        setState(() {
+          _isSigningIn = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تسجيل الدخول: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleSignOut() async {
+    try {
+      await _googleSignIn.signOut();
+      await FirebaseAuth.instance.signOut();
+
+      if (mounted) {
+        setState(() {
+          _currentUser = null;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تم تسجيل الخروج بنجاح'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Sign Out Error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تسجيل الخروج: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildLoginCard() {
+    if (_currentUser != null) {
+      // User is logged in - show user info card
+      return _buildCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundImage: _currentUser!.photoURL != null
+                      ? NetworkImage(_currentUser!.photoURL!)
+                      : null,
+                  backgroundColor: widget.isDark ? Colors.white12 : Colors.red.shade50,
+                  child: _currentUser!.photoURL == null
+                      ? const Icon(Icons.person, color: Colors.red, size: 30)
+                      : null,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _currentUser!.displayName ?? 'مستخدم',
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: widget.isDark ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _currentUser!.email ?? '',
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 14,
+                          color: widget.isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.withOpacity(0.1),
+                    foregroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _handleSignOut,
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text(
+                    'تسجيل الخروج',
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    // User is not logged in - show login button
+    return _buildCard(
+      onTap: _handleGoogleSignIn,
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: widget.isDark ? Colors.white12 : Colors.red.shade50,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.login,
+              color: Colors.red,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'تسجيل الدخول',
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: widget.isDark ? Colors.white : Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'سجل دخولك باستخدام حساب جوجل',
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 14,
+                    color: widget.isDark ? Colors.white70 : Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isSigningIn)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                color: Colors.red,
+                strokeWidth: 2,
+              ),
+            )
+          else
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.red,
+              size: 18,
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadNotificationPreference() async {
@@ -3386,6 +3667,8 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 8),
             
               const SizedBox(height: 24),
+              // Login Card
+              _buildLoginCard(),
               _buildCard(
                 child: Row(
                   children: [
