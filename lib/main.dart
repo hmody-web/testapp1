@@ -2037,6 +2037,14 @@ Future<void> downloadFile(
     throw UnimplementedError('Web download not implemented yet');
   }
 
+  if (fileUrl.isEmpty) {
+    throw Exception('رابط الملف فارغ');
+  }
+
+  print('Download started:');
+  print('  URL: $fileUrl');
+  print('  File: $fileName');
+
   try {
     PermissionStatus status;
     if (io.Platform.isIOS) {
@@ -2055,18 +2063,36 @@ Future<void> downloadFile(
       throw Exception('لم يتم منح إذن الوصول إلى التخزين');
     }
 
+    // تنظيف اسم الملف من الأحرف الخاصة
+    String cleanFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    if (cleanFileName.isEmpty) {
+      cleanFileName = 'downloaded_file';
+    }
+
+    print('  Clean filename: $cleanFileName');
+
     final uri = Uri.parse(fileUrl);
     final client = http.Client();
 
     try {
       final request = http.Request('GET', uri);
-      final streamedResponse = await client.send(request);
+      print('  Sending request...');
+      final streamedResponse = await client.send(request).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('انتهت مهلة التحميل (30 ثانية)');
+        },
+      );
+
+      print('  Response status: ${streamedResponse.statusCode}');
 
       if (streamedResponse.statusCode != 200) {
-        throw Exception('Failed to download file');
+        throw Exception('فشل تحميل الملف: ${streamedResponse.statusCode}');
       }
 
       final totalBytes = streamedResponse.contentLength;
+      print('  Total bytes: $totalBytes');
+
       final bytes = <int>[];
       var receivedBytes = 0;
 
@@ -2080,9 +2106,18 @@ Future<void> downloadFile(
         }
       }
 
+      print('  Received: $receivedBytes bytes');
+
+      if (bytes.isEmpty) {
+        throw Exception('الملف المحمّل فارغ');
+      }
+
       final directory = await _getDownloadDirectory();
-      final file = io.File('${directory.path}/$fileName');
+      final file = io.File('${directory.path}/$cleanFileName');
       await file.writeAsBytes(bytes);
+      
+      print('  Saved to: ${file.path}');
+      print('Download completed successfully!');
     } finally {
       client.close();
     }
@@ -2164,6 +2199,22 @@ class _ScriptsPageState extends State<ScriptsPage>
     final appId = app.id;
     final fileName = Uri.tryParse(app.fileUrl)?.pathSegments.last ?? app.title;
 
+    if (app.fileUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('رابط التحميل غير متوفر لـ ${app.title}'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _downloadingFiles.add(appId);
       _downloadProgress[appId] = 0.0;
@@ -2184,7 +2235,7 @@ class _ScriptsPageState extends State<ScriptsPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم تحميل ${app.title} بنجاح'),
+          content: Text('تم تحميل ${app.title} بنجاح ✓'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -2192,16 +2243,18 @@ class _ScriptsPageState extends State<ScriptsPage>
           ),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      print('Download error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل تحميل ${app.title}'),
+            content: Text('فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -3925,6 +3978,22 @@ class _AppsPageState extends State<AppsPage> {
     final appId = app.id;
     final fileName = Uri.tryParse(app.fileUrl)?.pathSegments.last ?? app.title;
 
+    if (app.fileUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('رابط التحميل غير متوفر لـ ${app.title}'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _downloadingFiles.add(appId);
       _downloadProgress[appId] = 0.0;
@@ -3945,7 +4014,7 @@ class _AppsPageState extends State<AppsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم تحميل ${app.title} بنجاح'),
+          content: Text('تم تحميل ${app.title} بنجاح ✓'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -3953,16 +4022,18 @@ class _AppsPageState extends State<AppsPage> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      print('Download error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل تحميل ${app.title}'),
+            content: Text('فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
