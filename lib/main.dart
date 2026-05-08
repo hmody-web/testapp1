@@ -2045,58 +2045,24 @@ Future<void> downloadFile(
   print('  File: $fileName');
 
   try {
-    // طلب الأذونات
-    PermissionStatus status;
-    
-    if (io.Platform.isIOS) {
-      status = await Permission.photos.status;
-      print('  iOS photos permission status: $status');
-      
-      if (!status.isGranted) {
-        print('  Requesting iOS photos permission...');
-        status = await Permission.photos.request();
-        print('  After request: $status');
-      }
-    } else if (io.Platform.isAndroid) {
-      // في Android 11+، نحتاج إلى MANAGE_EXTERNAL_STORAGE أو نستخدم app-specific directory
-      status = await Permission.storage.status;
-      print('  Android storage permission status: $status');
-      
-      if (!status.isGranted) {
-        print('  Requesting Android storage permission...');
-        status = await Permission.storage.request();
-        print('  After request: $status');
-      }
-      
-      // إذا تم رفض الأذن، نحاول استخدام app-specific directory
-      if (status.isDenied || status.isPermanentlyDenied) {
-        print('  Storage permission denied, using app-specific directory...');
-        // سنستخدم app-specific directory الذي لا يحتاج أذن
-        final directory = await _getAppSpecificDirectory();
-        final cleanFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-        final file = io.File('${directory.path}/$cleanFileName');
-        await _downloadAndSaveFile(fileUrl, file, onProgress);
-        return;
-      }
-    } else {
-      status = await Permission.storage.status;
-      print('  Storage permission status: $status');
-      
-      if (!status.isGranted) {
-        print('  Requesting storage permission...');
-        status = await Permission.storage.request();
-        print('  After request: $status');
+    // iOS لا يحتاج أي صلاحيات لحفظ الملفات في app-specific directory
+    // Android يحتاج صلاحية فقط للمجلدات العامة
+    if (!kIsWeb && io.Platform.isAndroid) {
+      // Android 13+ نستخدم app-specific directory مباشرة بدون صلاحية
+      // Android 12 وما دون نطلب storage permission
+      final sdkInt = await _getAndroidSdkVersion();
+      if (sdkInt < 33) {
+        final status = await Permission.storage.status;
+        if (!status.isGranted) {
+          final result = await Permission.storage.request();
+          // حتى لو رُفض، سنستخدم app-specific directory
+          if (result.isPermanentlyDenied) {
+            print('  Storage permanently denied, falling back to app dir');
+          }
+        }
       }
     }
-
-    // التحقق النهائي من الأذن
-    if (!status.isGranted) {
-      if (status.isPermanentlyDenied) {
-        throw Exception('تم رفض إذن الوصول إلى التخزين نهائياً. يرجى تفعيلها من الإعدادات.');
-      } else {
-        throw Exception('لم يتم منح إذن الوصول إلى التخزين');
-      }
-    }
+    // iOS: لا نطلب أي صلاحية - نحفظ مباشرة في app directory
 
     // تنظيف اسم الملف من الأحرف الخاصة
     String cleanFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
@@ -2108,11 +2074,21 @@ Future<void> downloadFile(
 
     final directory = await _getDownloadDirectory();
     final file = io.File('${directory.path}/$cleanFileName');
-    
+
     await _downloadAndSaveFile(fileUrl, file, onProgress);
   } catch (e) {
     print('Error downloading file: $e');
     rethrow;
+  }
+}
+
+Future<int> _getAndroidSdkVersion() async {
+  try {
+    if (!io.Platform.isAndroid) return 0;
+    final result = await io.Process.run('getprop', ['ro.build.version.sdk']);
+    return int.tryParse(result.stdout.toString().trim()) ?? 30;
+  } catch (_) {
+    return 30; // افتراضي آمن
   }
 }
 
@@ -2187,12 +2163,28 @@ Future<io.Directory> _getAppSpecificDirectory() async {
 }
 
 Future<io.Directory> _getDownloadDirectory() async {
-  if (io.Platform.isAndroid) {
-    final directory = io.Directory('/storage/emulated/0/Download/Scrptaty');
-    if (!await directory.exists()) {
-      await directory.create(recursive: true);
+  // iOS: يجب استخدام getApplicationDocumentsDirectory دائماً بدون أي صلاحيات
+  if (io.Platform.isIOS) {
+    final appDir = await getApplicationDocumentsDirectory();
+    final downloadDir = io.Directory('${appDir.path}/Scrptaty');
+    if (!await downloadDir.exists()) {
+      await downloadDir.create(recursive: true);
     }
-    return directory;
+    return downloadDir;
+  }
+
+  if (io.Platform.isAndroid) {
+    // حاول المجلد العام أولاً (يعمل بدون صلاحية على Android 10+)
+    try {
+      final directory = io.Directory('/storage/emulated/0/Download/Scrptaty');
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      return directory;
+    } catch (_) {
+      // fallback إلى app-specific directory
+      return _getAppSpecificDirectory();
+    }
   }
 
   if (io.Platform.isWindows) {
@@ -2203,7 +2195,7 @@ Future<io.Directory> _getDownloadDirectory() async {
     return directory;
   }
 
-  if (io.Platform.isMacOS || io.Platform.isLinux || io.Platform.isIOS) {
+  if (io.Platform.isMacOS || io.Platform.isLinux) {
     final homeDir = io.Platform.environment['HOME'] ?? io.Directory.current.path;
     final directory = io.Directory('$homeDir/Downloads/Scrptaty');
     if (!await directory.exists()) {
@@ -2212,7 +2204,7 @@ Future<io.Directory> _getDownloadDirectory() async {
     return directory;
   }
 
-  return io.Directory.current;
+  return _getAppSpecificDirectory();
 }
 
 class ScriptsPage extends StatefulWidget {
@@ -2224,12 +2216,16 @@ class ScriptsPage extends StatefulWidget {
 }
 
 class _ScriptsPageState extends State<ScriptsPage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   late Future<List<ScriptItem>> _scriptsFuture;
   late Future<List<AppItem>> _appsFuture;
   final Map<String, double> _downloadProgress = {};
   final Set<String> _downloadingFiles = {};
   final ScrollController _scrollController = ScrollController();
+  int _visibleAppsCount = 3;
+  final List<AnimationController> _appAnimControllers = [];
+  final List<Animation<double>> _appFadeAnims = [];
+  final List<Animation<Offset>> _appSlideAnims = [];
 
   @override
   void initState() {
@@ -2241,6 +2237,9 @@ class _ScriptsPageState extends State<ScriptsPage>
   @override
   void dispose() {
     _scrollController.dispose();
+    for (final c in _appAnimControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -2256,7 +2255,11 @@ class _ScriptsPageState extends State<ScriptsPage>
 
   Future<void> _downloadAppFile(AppItem app) async {
     final appId = app.id;
-    final fileName = Uri.tryParse(app.fileUrl)?.pathSegments.last ?? app.title;
+    // استخدم اسم الملف من الرابط مع التأكد من وجود الامتداد
+    String fileName = Uri.tryParse(app.fileUrl)?.pathSegments.last ?? '${app.title}.apk';
+    if (!fileName.contains('.')) {
+      fileName = '$fileName.apk';
+    }
 
     if (app.fileUrl.isEmpty) {
       if (mounted) {
@@ -2292,11 +2295,19 @@ class _ScriptsPageState extends State<ScriptsPage>
       );
 
       if (!mounted) return;
+
+      // على iOS: أخبر المستخدم أين يجد الملف (الملفات > على جهازي > Scrptaty)
+      final isIOS = !kIsWeb && io.Platform.isIOS;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم تحميل ${app.title} بنجاح ✓'),
+          content: Text(
+            isIOS
+                ? 'تم تحميل ${app.title} بنجاح ✓\nابحث عنه في: الملفات ← على جهازي ← Scrptaty'
+                : 'تم تحميل ${app.title} بنجاح ✓',
+          ),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: isIOS ? 5 : 3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
@@ -2525,6 +2536,46 @@ class _ScriptsPageState extends State<ScriptsPage>
     );
   }
 
+  void _showMoreApps(int totalApps) {
+    final prevCount = _visibleAppsCount;
+    final nextCount = (_visibleAppsCount + 3).clamp(0, totalApps);
+
+    // Create animation controllers for newly revealed cards
+    for (int i = prevCount; i < nextCount; i++) {
+      if (i >= _appAnimControllers.length) {
+        final ctrl = AnimationController(
+          vsync: this,
+          duration: Duration(milliseconds: 400 + (i - prevCount) * 80),
+        );
+        final fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+          CurvedAnimation(parent: ctrl, curve: Curves.easeOut),
+        );
+        final slide = Tween<Offset>(
+          begin: const Offset(0, 0.35),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: ctrl, curve: Curves.easeOutCubic));
+
+        _appAnimControllers.add(ctrl);
+        _appFadeAnims.add(fade);
+        _appSlideAnims.add(slide);
+      }
+    }
+
+    setState(() {
+      _visibleAppsCount = nextCount;
+    });
+
+    // Start animations with stagger
+    for (int i = prevCount; i < nextCount; i++) {
+      final delay = (i - prevCount) * 80;
+      Future.delayed(Duration(milliseconds: delay), () {
+        if (mounted && i < _appAnimControllers.length) {
+          _appAnimControllers[i].forward(from: 0);
+        }
+      });
+    }
+  }
+
   Widget _buildAppsSection(bool isDark) {
     return FutureBuilder<List<AppItem>>(
       future: _appsFuture,
@@ -2544,12 +2595,120 @@ class _ScriptsPageState extends State<ScriptsPage>
           return _buildEmptyMessage('لا توجد تطبيقات حالياً');
         }
 
+        // Ensure we have enough animation controllers for the initial 3
+        while (_appAnimControllers.length < _visibleAppsCount.clamp(0, apps.length)) {
+          final i = _appAnimControllers.length;
+          final ctrl = AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 400),
+            value: 1.0, // start completed for initial items
+          );
+          final fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+            CurvedAnimation(parent: ctrl, curve: Curves.easeOut),
+          );
+          final slide = Tween<Offset>(
+            begin: const Offset(0, 0.35),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: ctrl, curve: Curves.easeOutCubic));
+
+          _appAnimControllers.add(ctrl);
+          _appFadeAnims.add(fade);
+          _appSlideAnims.add(slide);
+        }
+
+        final visibleApps = apps.take(_visibleAppsCount).toList();
+        final hasMore = _visibleAppsCount < apps.length;
+
         return Column(
-          children: apps
-              .map((app) => _buildAppCard(app, isDark))
-              .toList(),
+          children: [
+            ...visibleApps.asMap().entries.map((entry) {
+              final i = entry.key;
+              final app = entry.value;
+
+              Widget card = _buildAppCard(app, isDark);
+
+              if (i < _appAnimControllers.length) {
+                card = FadeTransition(
+                  opacity: _appFadeAnims[i],
+                  child: SlideTransition(
+                    position: _appSlideAnims[i],
+                    child: card,
+                  ),
+                );
+              }
+
+              return card;
+            }).toList(),
+
+            if (hasMore) ...[
+              const SizedBox(height: 6),
+              _buildShowMoreButton(apps.length, isDark),
+            ],
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildShowMoreButton(int totalApps, bool isDark) {
+    final remaining = totalApps - _visibleAppsCount;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 10 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: GestureDetector(
+        onTap: () => _showMoreApps(totalApps),
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.red.withOpacity(0.6),
+              width: 1.5,
+            ),
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [
+                      Colors.red.withOpacity(0.10),
+                      Colors.red.withOpacity(0.04),
+                    ]
+                  : [
+                      Colors.red.withOpacity(0.07),
+                      Colors.red.withOpacity(0.02),
+                    ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.expand_more_rounded, color: Colors.red, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'اظهار المزيد ($remaining تطبيق)',
+                style: const TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
