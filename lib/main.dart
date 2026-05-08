@@ -1924,16 +1924,25 @@ class AppItem {
   final String title;
   final String imageUrl;
   final String fileUrl;
+  final String fileSize;
 
   const AppItem({
     required this.id,
     required this.title,
     required this.imageUrl,
     required this.fileUrl,
+    this.fileSize = '',
   });
 
   String get encodedImageUrl => Uri.encodeFull(imageUrl);
   String get encodedFileUrl => Uri.encodeFull(fileUrl);
+
+  /// استخراج صيغة الملف من الرابط (مثل APK, IPA, ZIP)
+  String get fileFormat {
+    if (fileUrl.isEmpty) return '';
+    final ext = fileUrl.split('?').first.split('.').last.toLowerCase();
+    return ext.length <= 5 ? ext.toUpperCase() : '';
+  }
 
   factory AppItem.fromJson(Map<String, dynamic> json) {
     final rawImage = json['image']?.toString().trim() ?? '';
@@ -1955,6 +1964,7 @@ class AppItem {
       title: json['title']?.toString().trim() ?? '',
       imageUrl: resolvedImage,
       fileUrl: resolvedFile,
+      fileSize: json['file_size']?.toString().trim() ?? '',
     );
   }
 }
@@ -2296,18 +2306,16 @@ class _ScriptsPageState extends State<ScriptsPage>
 
       if (!mounted) return;
 
-      // على iOS: أخبر المستخدم أين يجد الملف (الملفات > على جهازي > Scrptaty)
-      final isIOS = !kIsWeb && io.Platform.isIOS;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isIOS
-                ? 'تم تحميل ${app.title} بنجاح ✓\nابحث عنه في: الملفات ← على جهازي ← Scrptaty'
-                : 'تم تحميل ${app.title} بنجاح ✓',
+            'تم تحميل ${app.title} بنجاح ✓',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontFamily: 'Tajawal'),
           ),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: isIOS ? 5 : 3),
+          duration: const Duration(seconds: 3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
@@ -2318,7 +2326,11 @@ class _ScriptsPageState extends State<ScriptsPage>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}'),
+            content: Text(
+              'فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Tajawal'),
+            ),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -2860,18 +2872,59 @@ class _ScriptsPageState extends State<ScriptsPage>
                   ),
           ),
           const SizedBox(width: 16),
-          // اسم التطبيق
+          // اسم التطبيق + الحجم والصيغة
           Expanded(
-            child: Text(
-              app.title,
-              style: TextStyle(
-                fontFamily: 'Tajawal',
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  app.title,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (app.fileSize.isNotEmpty || app.fileFormat.isNotEmpty)
+                  const SizedBox(height: 4),
+                if (app.fileSize.isNotEmpty || app.fileFormat.isNotEmpty)
+                  Row(
+                    children: [
+                      if (app.fileFormat.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            app.fileFormat,
+                            style: const TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
+                      if (app.fileFormat.isNotEmpty && app.fileSize.isNotEmpty)
+                        const SizedBox(width: 6),
+                      if (app.fileSize.isNotEmpty)
+                        Text(
+                          app.fileSize,
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.black45,
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
             ),
           ),
           const SizedBox(width: 12),
@@ -4759,7 +4812,11 @@ class _AppsPageState extends State<AppsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم تحميل ${app.title} بنجاح ✓'),
+          content: Text(
+            'تم تحميل ${app.title} بنجاح ✓',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontFamily: 'Tajawal'),
+          ),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -4772,7 +4829,11 @@ class _AppsPageState extends State<AppsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}'),
+            content: Text(
+              'فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Tajawal'),
+            ),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -4913,16 +4974,57 @@ class _AppsPageState extends State<AppsPage> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              app.title,
-              style: TextStyle(
-                fontFamily: 'Tajawal',
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  app.title,
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (app.fileSize.isNotEmpty || app.fileFormat.isNotEmpty)
+                  const SizedBox(height: 4),
+                if (app.fileSize.isNotEmpty || app.fileFormat.isNotEmpty)
+                  Row(
+                    children: [
+                      if (app.fileFormat.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            app.fileFormat,
+                            style: const TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
+                      if (app.fileFormat.isNotEmpty && app.fileSize.isNotEmpty)
+                        const SizedBox(width: 6),
+                      if (app.fileSize.isNotEmpty)
+                        Text(
+                          app.fileSize,
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.black45,
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
             ),
           ),
           const SizedBox(width: 12),
