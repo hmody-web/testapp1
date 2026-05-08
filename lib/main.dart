@@ -17,6 +17,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver/image_gallery_saver.dart';
@@ -26,6 +27,399 @@ import 'firebase_options.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
+
+// ============================================================
+// 🌐 InAppBrowserPage - المتصفح الداخلي الرائع
+// ============================================================
+class InAppBrowserPage extends StatefulWidget {
+  final String url;
+  final String title;
+  final bool isDark;
+
+  const InAppBrowserPage({
+    Key? key,
+    required this.url,
+    this.title = '',
+    this.isDark = true,
+  }) : super(key: key);
+
+  @override
+  State<InAppBrowserPage> createState() => _InAppBrowserPageState();
+}
+
+class _InAppBrowserPageState extends State<InAppBrowserPage>
+    with SingleTickerProviderStateMixin {
+  late WebViewController _controller;
+  bool _isLoading = true;
+  double _loadingProgress = 0.0;
+  String _currentUrl = '';
+  String _pageTitle = '';
+  bool _canGoBack = false;
+  bool _canGoForward = false;
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUrl = widget.url;
+    _pageTitle = widget.title;
+
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOut,
+    );
+
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(widget.isDark ? const Color(0xFF111111) : Colors.white)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (url) {
+            setState(() {
+              _isLoading = true;
+              _loadingProgress = 0.0;
+              _currentUrl = url;
+            });
+          },
+          onProgress: (progress) {
+            setState(() {
+              _loadingProgress = progress / 100.0;
+            });
+          },
+          onPageFinished: (url) async {
+            setState(() {
+              _isLoading = false;
+              _loadingProgress = 1.0;
+            });
+            _fadeController.forward(from: 0);
+            final title = await _controller.getTitle();
+            final canBack = await _controller.canGoBack();
+            final canFwd = await _controller.canGoForward();
+            if (mounted) {
+              setState(() {
+                _pageTitle = title ?? _pageTitle;
+                _canGoBack = canBack;
+                _canGoForward = canFwd;
+              });
+            }
+          },
+          onWebResourceError: (_) {
+            if (mounted) setState(() => _isLoading = false);
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(widget.url));
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  String _getDomain(String url) {
+    try {
+      return Uri.parse(url).host.replaceAll('www.', '');
+    } catch (_) {
+      return url;
+    }
+  }
+
+  Future<void> _openExternal() async {
+    final uri = Uri.tryParse(_currentUrl);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isDark ? const Color(0xFF111111) : Colors.white;
+    final surface = widget.isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+    final textColor = widget.isDark ? Colors.white : Colors.black;
+    final subColor = widget.isDark ? Colors.white54 : Colors.black45;
+    const red = Color(0xFFE53935);
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: bg,
+        body: Column(
+          children: [
+            // ── شريط العنوان العلوي ──
+            Container(
+              decoration: BoxDecoration(
+                color: surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: widget.isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.black.withOpacity(0.08),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      child: Row(
+                        children: [
+                          // زر الإغلاق
+                          _BrowserButton(
+                            icon: Icons.close_rounded,
+                            isDark: widget.isDark,
+                            onTap: () => Navigator.pop(context),
+                          ),
+                          const SizedBox(width: 6),
+                          // شريط العنوان والرابط
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {},
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: widget.isDark
+                                      ? Colors.white.withOpacity(0.07)
+                                      : Colors.black.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 13,
+                                      color: Colors.green[400],
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_pageTitle.isNotEmpty)
+                                            Text(
+                                              _pageTitle,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontFamily: 'Tajawal',
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color: textColor,
+                                              ),
+                                            ),
+                                          Text(
+                                            _getDomain(_currentUrl),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontFamily: 'Tajawal',
+                                              fontSize: 11,
+                                              color: subColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // فتح في متصفح خارجي
+                          _BrowserButton(
+                            icon: Icons.open_in_new_rounded,
+                            isDark: widget.isDark,
+                            onTap: _openExternal,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // شريط التحميل
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      height: _isLoading ? 3 : 0,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: _loadingProgress,
+                          backgroundColor: Colors.transparent,
+                          valueColor: const AlwaysStoppedAnimation<Color>(red),
+                          minHeight: 3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── WebView ──
+            Expanded(
+              child: Stack(
+                children: [
+                  FadeTransition(
+                    opacity: _isLoading
+                        ? const AlwaysStoppedAnimation(0.0)
+                        : _fadeAnimation,
+                    child: WebViewWidget(controller: _controller),
+                  ),
+                  if (_isLoading)
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: CircularProgressIndicator(
+                              value: _loadingProgress > 0 ? _loadingProgress : null,
+                              strokeWidth: 3,
+                              color: red,
+                              backgroundColor: widget.isDark
+                                  ? Colors.white12
+                                  : Colors.black12,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'جاري التحميل...',
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 14,
+                              color: subColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ── شريط التنقل السفلي ──
+            Container(
+              decoration: BoxDecoration(
+                color: surface,
+                border: Border(
+                  top: BorderSide(
+                    color: widget.isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.black.withOpacity(0.08),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _BrowserButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        isDark: widget.isDark,
+                        enabled: _canGoBack,
+                        onTap: () async {
+                          if (await _controller.canGoBack()) {
+                            _controller.goBack();
+                          }
+                        },
+                      ),
+                      _BrowserButton(
+                        icon: Icons.arrow_forward_ios_rounded,
+                        isDark: widget.isDark,
+                        enabled: _canGoForward,
+                        onTap: () async {
+                          if (await _controller.canGoForward()) {
+                            _controller.goForward();
+                          }
+                        },
+                      ),
+                      _BrowserButton(
+                        icon: Icons.refresh_rounded,
+                        isDark: widget.isDark,
+                        onTap: () => _controller.reload(),
+                      ),
+                      _BrowserButton(
+                        icon: Icons.share_rounded,
+                        isDark: widget.isDark,
+                        onTap: _openExternal,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BrowserButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isDark;
+  final bool enabled;
+
+  const _BrowserButton({
+    required this.icon,
+    required this.onTap,
+    required this.isDark,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled
+        ? (isDark ? Colors.white : Colors.black87)
+        : (isDark ? Colors.white24 : Colors.black26);
+
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: isDark
+              ? Colors.white.withOpacity(enabled ? 0.07 : 0.03)
+              : Colors.black.withOpacity(enabled ? 0.06 : 0.02),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
+}
+
+/// دالة مساعدة لفتح الروابط في المتصفح الداخلي
+void openInAppBrowser(BuildContext context, String url,
+    {String title = '', bool isDark = true}) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => InAppBrowserPage(url: url, title: title, isDark: isDark),
+    ),
+  );
+}
 
 class NotificationService {
   static const String _channelId = 'scrptaty_notifications';
@@ -988,6 +1382,27 @@ class PostSearchDelegate extends SearchDelegate<String> {
   String get searchFieldLabel => 'البحث في المنشورات...';
 
   @override
+  ThemeData appBarTheme(BuildContext context) {
+    final theme = super.appBarTheme(context);
+    return theme.copyWith(
+      textTheme: theme.textTheme.copyWith(
+        titleLarge: const TextStyle(
+          fontFamily: 'Tajawal',
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        hintStyle: TextStyle(
+          fontFamily: 'Tajawal',
+          fontSize: 16,
+          color: isDark ? Colors.white54 : Colors.black54,
+        ),
+      ),
+    );
+  }
+
+  @override
   List<Widget> buildActions(BuildContext context) {
     return [
       IconButton(
@@ -1015,20 +1430,88 @@ class PostSearchDelegate extends SearchDelegate<String> {
         post.title.toLowerCase().contains(query.toLowerCase()) ||
         post.description.toLowerCase().contains(query.toLowerCase())).toList();
 
+    if (results.isEmpty) {
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.search_off, size: 64, color: isDark ? Colors.white54 : Colors.black54),
+              const SizedBox(height: 16),
+              Text(
+                'لا توجد نتائج للبحث',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 18,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: ListView.builder(
+      child: ListView.separated(
         itemCount: results.length,
+        separatorBuilder: (context, index) => Divider(
+          height: 1,
+          thickness: 0.5,
+          color: isDark ? Colors.white12 : Colors.black12,
+        ),
         itemBuilder: (context, index) {
           final post = results[index];
           return ListTile(
-            title: Text(post.title, style: TextStyle(color: isDark ? Colors.white : Colors.black)),
-            subtitle: Text(stripHtmlTags(post.description), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
+            leading: post.imageUrl.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      post.encodedImageUrl,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: 50,
+                        height: 50,
+                        color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                        child: const Icon(Icons.image, color: Colors.grey),
+                      ),
+                    ),
+                  )
+                : null,
+            title: Text(
+              post.title,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+              textAlign: TextAlign.right,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: post.description.isNotEmpty
+                ? Text(
+                    stripHtmlTags(post.description),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 14,
+                      color: isDark ? Colors.white70 : Colors.black54,
+                    ),
+                    textAlign: TextAlign.right,
+                  )
+                : null,
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => PostDetailsPage(post: post, isDark: isDark),
+                _SlideFromLeftRoute(
+                  page: PostDetailsPage(post: post, isDark: isDark),
                 ),
               );
             },
@@ -1043,20 +1526,142 @@ class PostSearchDelegate extends SearchDelegate<String> {
     final suggestions = posts.where((post) =>
         post.title.toLowerCase().contains(query.toLowerCase())).toList();
 
+    if (suggestions.isEmpty && query.isEmpty) {
+      // Show all posts as suggestions when query is empty
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Text(
+                'المقترحات',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                itemCount: posts.length > 10 ? 10 : posts.length,
+                separatorBuilder: (context, index) => Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: isDark ? Colors.white12 : Colors.black12,
+                ),
+                itemBuilder: (context, index) {
+                  final post = posts[index];
+                  return ListTile(
+                    leading: post.imageUrl.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              post.encodedImageUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 50,
+                                height: 50,
+                                color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                                child: const Icon(Icons.image, color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        : null,
+                    title: Text(
+                      post.title,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 15,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                      textAlign: TextAlign.right,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () {
+                      query = post.title;
+                      showResults(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: ListView.builder(
-        itemCount: suggestions.length,
-        itemBuilder: (context, index) {
-          final post = suggestions[index];
-          return ListTile(
-            title: Text(post.title, style: TextStyle(color: isDark ? Colors.white : Colors.black)),
-            onTap: () {
-              query = post.title;
-              showResults(context);
-            },
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              'المقترحات',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              itemCount: suggestions.length,
+              separatorBuilder: (context, index) => Divider(
+                height: 1,
+                thickness: 0.5,
+                color: isDark ? Colors.white12 : Colors.black12,
+              ),
+              itemBuilder: (context, index) {
+                final post = suggestions[index];
+                return ListTile(
+                  leading: post.imageUrl.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            post.encodedImageUrl,
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              width: 50,
+                              height: 50,
+                              color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                              child: const Icon(Icons.image, color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      : null,
+                  title: Text(
+                    post.title,
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      fontSize: 15,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                    textAlign: TextAlign.right,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () {
+                    query = post.title;
+                    showResults(context);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1223,8 +1828,8 @@ class _HomePageState extends State<HomePage>
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsPage(
+                  _SlideFromLeftRoute(
+                    page: SettingsPage(
                       isDark: widget.isDark,
                       onToggle: widget.onToggle,
                       highlightLogin: true,
@@ -1249,6 +1854,7 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
             ),
+            const SizedBox(width: 10),
           ],
         ),
         body: RefreshIndicator(
@@ -1996,11 +2602,7 @@ appBar: AppBar(
                       },
                       onLinkTap: (url, attributes, element) {
                         if (url == null || url.isEmpty) return;
-                        final uri = Uri.tryParse(url);
-                        if (uri != null) {
-                          launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
-                        }
+                        openInAppBrowser(context, url, isDark: isDark);
                       },
                     ),
                 ],
@@ -3007,52 +3609,54 @@ class _ScriptsPageState extends State<ScriptsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  app.title,
-                  style: TextStyle(
-                    fontFamily: 'Tajawal',
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (app.fileSize.isNotEmpty || app.fileFormat.isNotEmpty)
-                  const SizedBox(height: 4),
-                if (app.fileSize.isNotEmpty || app.fileFormat.isNotEmpty)
-                  Row(
-                    children: [
-                      if (app.fileFormat.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            app.fileFormat,
-                            style: const TextStyle(
-                              fontFamily: 'Tajawal',
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        app.title,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black,
                         ),
-                      if (app.fileFormat.isNotEmpty && app.fileSize.isNotEmpty)
-                        const SizedBox(width: 6),
-                      if (app.fileSize.isNotEmpty)
-                        Text(
-                          app.fileSize,
-                          style: TextStyle(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (app.fileFormat.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          app.fileFormat,
+                          style: const TextStyle(
                             fontFamily: 'Tajawal',
-                            fontSize: 12,
-                            color: isDark ? Colors.white54 : Colors.black45,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
                           ),
                         ),
+                      ),
                     ],
-                  ),
+                    if (app.fileSize.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        app.fileSize,
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.black45,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
@@ -3167,24 +3771,19 @@ class ContactPage extends StatelessWidget {
   final bool isDark;
   const ContactPage({required this.isDark});
 
-  Future<void> _openLink(String value, {bool isEmail = false}) async {
-    final Uri uri;
-
+  Future<void> _openLink(BuildContext context, String value, {bool isEmail = false}) async {
     if (isEmail) {
-      uri = Uri(
+      final Uri uri = Uri(
         scheme: 'mailto',
         path: value,
         query: Uri.encodeFull('subject=تواصل&body=مرحباً'),
       );
-    } else {
-      uri = Uri.parse(value);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return;
     }
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      print("❌ ماكدر أفتح الرابط");
-    }
+    openInAppBrowser(context, value, isDark: isDark);
   }
 
   @override
@@ -3298,14 +3897,14 @@ class ContactPage extends StatelessWidget {
                 icon: const Icon(Icons.email, color: Colors.red),
                 title: "البريد الإلكتروني",
                 subtitle: "info@scrptaty.com",
-                onTap: () => _openLink("info@scrptaty.com", isEmail: true),
+                onTap: () => _openLink(context, "info@scrptaty.com", isEmail: true),
               ),
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.language, color: Colors.blue),
                 title: "الموقع الإلكتروني",
                 subtitle: "https://scrptaty.com",
-                onTap: () => _openLink("https://scrptaty.com"),
+                onTap: () => _openLink(context, "https://scrptaty.com"),
               ),
               _buildCard(
                 isDark,
@@ -3329,14 +3928,14 @@ class ContactPage extends StatelessWidget {
                 ),
                 title: "إنستكرام",
                 subtitle: "@Eng.mu7med",
-                onTap: () => _openLink("https://instagram.com/Eng.mu7med"),
+                onTap: () => _openLink(context, "https://instagram.com/Eng.mu7med"),
               ),
               _buildCard(
                 isDark,
                 icon: const Icon(Icons.send, color: Colors.blueAccent),
                 title: "تلكرام",
                 subtitle: "@Mooo5",
-                onTap: () => _openLink("https://t.me/Mooo5"),
+                onTap: () => _openLink(context, "https://t.me/Mooo5"),
               ),
               _buildCard(
                 isDark,
@@ -3344,7 +3943,7 @@ class ContactPage extends StatelessWidget {
                     const Icon(FontAwesomeIcons.whatsapp, color: Colors.green),
                 title: "واتساب",
                 subtitle: "+964 772 653 7514",
-                onTap: () => _openLink("https://wa.me/9647726537514"),
+                onTap: () => _openLink(context, "https://wa.me/9647726537514"),
               ),
               const SizedBox(height: 100),
             ],
@@ -3573,23 +4172,47 @@ class SettingsPage extends StatefulWidget {
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderStateMixin {
   bool notificationsEnabled = false;
   bool _isSigningIn = false;
   User? _currentUser;
   bool _showStarRain = false;
-final GoogleSignIn _googleSignIn = GoogleSignIn(
-  scopes: ['email', 'profile'],
-  clientId: kIsWeb
-      ? '279825670275-2quhbvdtagv7he8s9juc9dvl6i40bgtc.apps.googleusercontent.com'
-      : null,
-);
+  late AnimationController _highlightController;
+  late Animation<double> _highlightAnimation;
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    clientId: kIsWeb
+        ? '279825670275-2quhbvdtagv7he8s9juc9dvl6i40bgtc.apps.googleusercontent.com'
+        : null,
+  );
 
   @override
   void initState() {
     super.initState();
+    _highlightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _highlightAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _highlightController, curve: Curves.easeInOut),
+    );
+    // Start highlight animation if coming from profile tap
+    if (widget.highlightLogin) {
+      _highlightController.forward().then((_) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _highlightController.reverse();
+        });
+      });
+    }
     _loadNotificationPreference();
     _checkCurrentUser();
+  }
+
+  @override
+  void dispose() {
+    _highlightController.dispose();
+    super.dispose();
   }
 
   Future<void> _checkCurrentUser() async {
@@ -3661,7 +4284,7 @@ Future<void> _handleGoogleSignIn() async {
           ),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 89),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -3716,7 +4339,7 @@ Future<void> _handleGoogleSignIn() async {
             ),
             backgroundColor: Colors.orange.shade700,
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 89),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),
@@ -3989,11 +4612,8 @@ Future<void> _handleGoogleSignIn() async {
     }
   }
 
-  Future<void> _openLink(String value) async {
-    final uri = Uri.parse(value);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+  void _openLink(BuildContext context, String value) {
+    openInAppBrowser(context, value, isDark: widget.isDark);
   }
 
   void _showDonationSheet(BuildContext context) {
@@ -4675,17 +5295,17 @@ class HostingPage extends StatefulWidget {
 }
 
 class _HostingPageState extends State<HostingPage> {
-  late Future<List<PostItem>> _postsFuture;
+  late Future<List<ScriptItem>> _scriptsFuture;
 
   @override
   void initState() {
     super.initState();
-    _postsFuture = fetchPosts();
+    _scriptsFuture = fetchScripts();
   }
 
-  Future<void> _refreshPosts() async {
+  Future<void> _refreshScripts() async {
     setState(() {
-      _postsFuture = fetchPosts();
+      _scriptsFuture = fetchScripts();
     });
   }
 
@@ -4729,11 +5349,11 @@ class _HostingPageState extends State<HostingPage> {
           ),
         ),
         body: RefreshIndicator(
-          onRefresh: _refreshPosts,
+          onRefresh: _refreshScripts,
           color: Colors.red,
           backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
-          child: FutureBuilder<List<PostItem>>(
-            future: _postsFuture,
+          child: FutureBuilder<List<ScriptItem>>(
+            future: _scriptsFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
@@ -4743,20 +5363,20 @@ class _HostingPageState extends State<HostingPage> {
 
               if (snapshot.hasError) {
                 return _buildPageMessage(
-                    'تعذر تحميل المنشورات حالياً', isDark, Icons.error_outline);
+                    'تعذر تحميل السكربتات حالياً', isDark, Icons.error_outline);
               }
 
-              final posts = snapshot.data ?? [];
-              if (posts.isEmpty) {
-                return _buildPageMessage('لا توجد منشورات حالياً', isDark, Icons.inbox_outlined);
+              final scripts = snapshot.data ?? [];
+              if (scripts.isEmpty) {
+                return _buildPageMessage('لا توجد سكربتات حالياً', isDark, Icons.inbox_outlined);
               }
 
               return ListView.separated(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemCount: posts.length,
+                itemCount: scripts.length,
                 itemBuilder: (context, index) {
-                  return _buildHostingPostCard(posts[index], isDark);
+                  return _buildScriptCard(scripts[index], isDark);
                 },
               );
             },
@@ -4766,11 +5386,7 @@ class _HostingPageState extends State<HostingPage> {
     );
   }
 
-  Widget _buildHostingPostCard(PostItem post, bool isDark) {
-    final plainDescription = stripHtmlTags(post.description)
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-
+  Widget _buildScriptCard(ScriptItem script, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -4784,11 +5400,11 @@ class _HostingPageState extends State<HostingPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (post.imageUrl.isNotEmpty)
+          if (script.imageUrl.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: Image.network(
-                post.encodedImageUrl,
+                script.encodedImageUrl,
                 width: 90,
                 height: 90,
                 fit: BoxFit.cover,
@@ -4800,13 +5416,13 @@ class _HostingPageState extends State<HostingPage> {
                 ),
               ),
             ),
-          if (post.imageUrl.isNotEmpty) const SizedBox(width: 12),
+          if (script.imageUrl.isNotEmpty) const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  post.title.isNotEmpty ? post.title : 'منشور جديد',
+                  script.title.isNotEmpty ? script.title : 'سكربت جديد',
                   textAlign: TextAlign.right,
                   style: TextStyle(
                     fontFamily: 'Tajawal',
@@ -4815,18 +5431,6 @@ class _HostingPageState extends State<HostingPage> {
                     color: isDark ? Colors.white : Colors.black,
                   ),
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  plainDescription.isNotEmpty ? plainDescription : 'لا يوجد وصف متاح.',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontFamily: 'Tajawal',
-                    fontSize: 13,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                  ),
-                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
