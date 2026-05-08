@@ -189,8 +189,12 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(MyApp());
-}
+ runApp(
+    const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: SplashScreen(),
+    ),
+  );}
 class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => _MyAppState();
@@ -3068,6 +3072,154 @@ class ContactPage extends StatelessWidget {
 }
 
 // ============================================================
+//  Star Rain Overlay - مطر النجوم الاحتفالي
+// ============================================================
+class _StarParticle {
+  double x;
+  double y;
+  double speed;
+  double size;
+  double opacity;
+  double rotation;
+  Color color;
+
+  _StarParticle({
+    required this.x,
+    required this.y,
+    required this.speed,
+    required this.size,
+    required this.opacity,
+    required this.rotation,
+    required this.color,
+  });
+}
+
+class StarRainOverlay extends StatefulWidget {
+  final VoidCallback onFinished;
+  const StarRainOverlay({Key? key, required this.onFinished}) : super(key: key);
+
+  @override
+  State<StarRainOverlay> createState() => _StarRainOverlayState();
+}
+
+class _StarRainOverlayState extends State<StarRainOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  final List<_StarParticle> _particles = [];
+  final math.Random _random = math.Random();
+
+  final List<Color> _colors = [
+    Colors.amber,
+    Colors.yellow,
+    Colors.orange,
+    Colors.red,
+    Colors.pink,
+    Colors.white,
+    const Color(0xFFFFD700),
+    const Color(0xFFFFA500),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _generateParticles();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..addListener(() {
+        setState(() {
+          for (var p in _particles) {
+            p.y += p.speed;
+            p.rotation += 0.05;
+            if (p.y > 1.1) {
+              p.y = -0.05;
+              p.x = _random.nextDouble();
+            }
+          }
+        });
+      });
+
+    _controller.repeat();
+    Future.delayed(const Duration(milliseconds: 2800), () {
+      if (mounted) {
+        _controller.stop();
+        widget.onFinished();
+      }
+    });
+  }
+
+  void _generateParticles() {
+    for (int i = 0; i < 80; i++) {
+      _particles.add(_StarParticle(
+        x: _random.nextDouble(),
+        y: _random.nextDouble(),
+        speed: 0.004 + _random.nextDouble() * 0.008,
+        size: 8 + _random.nextDouble() * 16,
+        opacity: 0.6 + _random.nextDouble() * 0.4,
+        rotation: _random.nextDouble() * math.pi * 2,
+        color: _colors[_random.nextInt(_colors.length)],
+      ));
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: _StarRainPainter(particles: _particles),
+        ),
+      ),
+    );
+  }
+}
+
+class _StarRainPainter extends CustomPainter {
+  final List<_StarParticle> particles;
+  _StarRainPainter({required this.particles});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var p in particles) {
+      final paint = Paint()
+        ..color = p.color.withOpacity(p.opacity)
+        ..style = PaintingStyle.fill;
+
+      canvas.save();
+      canvas.translate(p.x * size.width, p.y * size.height);
+      canvas.rotate(p.rotation);
+
+      final path = Path();
+      final r = p.size / 2;
+      for (int i = 0; i < 5; i++) {
+        final angle = (i * 4 * math.pi / 5) - math.pi / 2;
+        final innerAngle = angle + 2 * math.pi / 10;
+        if (i == 0) {
+          path.moveTo(r * math.cos(angle), r * math.sin(angle));
+        } else {
+          path.lineTo(r * math.cos(angle), r * math.sin(angle));
+        }
+        path.lineTo(
+            (r * 0.4) * math.cos(innerAngle), (r * 0.4) * math.sin(innerAngle));
+      }
+      path.close();
+
+      canvas.drawPath(path, paint);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StarRainPainter oldDelegate) => true;
+}
+
+// ============================================================
 //  صفحة الإعدادات
 // ============================================================
 class SettingsPage extends StatefulWidget {
@@ -3083,6 +3235,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool notificationsEnabled = false;
   bool _isSigningIn = false;
   User? _currentUser;
+  bool _showStarRain = false;
 final GoogleSignIn _googleSignIn = GoogleSignIn(
   scopes: ['email', 'profile'],
   clientId: kIsWeb
@@ -3148,11 +3301,31 @@ Future<void> _handleGoogleSignIn() async {
         _isSigningIn = false;
       });
 
+      final userName = userCredential.user?.displayName ?? 'بك';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              'مرحباً ${userCredential.user?.displayName ?? "بك"} 👋'),
-          backgroundColor: Colors.green,
+          content: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(
+              'مرحباً $userName 👋',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          elevation: 8,
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -3186,12 +3359,28 @@ Future<void> _handleGoogleSignIn() async {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('تم تسجيل الخروج بنجاح'),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: const Text(
+                'تم تسجيل الخروج بنجاح',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ),
+            backgroundColor: Colors.orange.shade700,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            elevation: 8,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -3276,33 +3465,40 @@ Future<void> _handleGoogleSignIn() async {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
-            // شارة العضو المميز
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.red.shade700,
-                    Colors.red.shade400,
+            // شارة العضو المميز - قابلة للضغط لتطلق مطر النجوم
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showStarRain = true;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.red.shade700,
+                      Colors.red.shade400,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                    SizedBox(width: 5),
+                    Text(
+                      'عضو مميز في سكربتاتي',
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 13,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.star_rounded, color: Colors.amber, size: 16),
-                  SizedBox(width: 5),
-                  Text(
-                    'عضو مميز في سكربتاتي',
-                    style: TextStyle(
-                      fontFamily: 'Tajawal',
-                      fontSize: 13,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -3671,33 +3867,35 @@ Future<void> _handleGoogleSignIn() async {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor:
-            widget.isDark ? const Color(0xFF111111) : const Color(0xFFF4F4F4),
-        appBar: AppBar(
-          backgroundColor:
-              widget.isDark ? const Color(0xFF161616) : Colors.white,
-          automaticallyImplyLeading: false,
-          title: Text(
-            'الإعدادات',
-            style: TextStyle(
-              fontFamily: 'Tajawal',
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: widget.isDark ? Colors.white : Colors.black,
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor:
+                widget.isDark ? const Color(0xFF111111) : const Color(0xFFF4F4F4),
+            appBar: AppBar(
+              backgroundColor:
+                  widget.isDark ? const Color(0xFF161616) : Colors.white,
+              automaticallyImplyLeading: false,
+              title: Text(
+                'الإعدادات',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: widget.isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              bottom: const PreferredSize(
+                preferredSize: Size.fromHeight(1),
+                child: Divider(height: 1, color: Colors.red),
+              ),
             ),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(1),
-            child: Divider(height: 1, color: Colors.red),
-          ),
-        ),
-        body: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+            body: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
 
               const SizedBox(height: 8),
             
@@ -3922,9 +4120,18 @@ Future<void> _handleGoogleSignIn() async {
                   ],
                 ),
               ),
+                    const SizedBox(height: 90),
             ],
           ),
         ),
+      ), // end Scaffold
+          if (_showStarRain)
+            StarRainOverlay(
+              onFinished: () {
+                if (mounted) setState(() => _showStarRain = false);
+              },
+            ),
+        ],
       ),
     );
   }
