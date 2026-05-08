@@ -3083,11 +3083,12 @@ class _SettingsPageState extends State<SettingsPage> {
   bool notificationsEnabled = false;
   bool _isSigningIn = false;
   User? _currentUser;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
-    clientId: '279825670275-2quhbvdtagv7he8s9juc9dvl6i40bgtc.apps.googleusercontent.com',
-
-  );
+final GoogleSignIn _googleSignIn = GoogleSignIn(
+  scopes: ['email', 'profile'],
+  clientId: kIsWeb
+      ? '279825670275-2quhbvdtagv7he8s9juc9dvl6i40bgtc.apps.googleusercontent.com'
+      : null,
+);
 
   @override
   void initState() {
