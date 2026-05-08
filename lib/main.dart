@@ -182,44 +182,15 @@ class NotificationService {
 }
 
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
-    print('Firebase initialized successfully');
-  } catch (e) {
-    print('Firebase initialization error: $e');
-  }
-
-  if (Firebase.apps.isEmpty) {
-    print('ERROR: No Firebase apps initialized!');
-  } else {
-    print('Firebase apps: ${Firebase.apps.map((app) => app.name).toList()}');
-  }
-
-  tz.initializeTimeZones();
-  await NotificationService.initialize();
-
-  runApp(
-    MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'Tajawal',
-        brightness: Brightness.light,
-      ),
-      darkTheme: ThemeData(
-        fontFamily: 'Tajawal',
-        brightness: Brightness.dark,
-      ),
-      home: SplashScreen(),
-    ),
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
   );
-}
 
+  runApp(MyApp());
+}
 class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => _MyAppState();
@@ -3114,6 +3085,8 @@ class _SettingsPageState extends State<SettingsPage> {
   User? _currentUser;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
+    clientId: '279825670275-2quhbvdtagv7he8s9juc9dvl6i40bgtc.apps.googleusercontent.com',
+
   );
 
   @override
@@ -3132,107 +3105,74 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _handleGoogleSignIn() async {
-    if (_isSigningIn) return;
+Future<void> _handleGoogleSignIn() async {
+  if (_isSigningIn) return;
 
-    // Check if Firebase is initialized
-    if (Firebase.apps.isEmpty) {
-      print('ERROR: Firebase not initialized!');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ: لم يتم تهيئة Firebase'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+  setState(() {
+    _isSigningIn = true;
+  });
+
+  try {
+    print('Starting Google Sign-In...');
+
+    final GoogleSignInAccount? googleUser =
+        await _googleSignIn.signIn();
+
+    if (googleUser == null) {
+      setState(() {
+        _isSigningIn = false;
+      });
       return;
     }
 
-    setState(() {
-      _isSigningIn = true;
-    });
+    print("Google user: ${googleUser.email}");
 
-    try {
-      print('Starting Google Sign-In...');
-      
-      // Trigger the Google Sign-In flow
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      print('Google user: ${googleUser?.email ?? "null"}');
+    // الحصول على بيانات المصادقة من جوجل
+    final GoogleSignInAuthentication googleAuth =
+        await googleUser.authentication;
 
-      if (googleUser == null) {
-        // User cancelled the sign-in
-        print('User cancelled sign-in');
-        if (mounted) {
-          setState(() {
-            _isSigningIn = false;
-          });
-        }
-        return;
-      }
+    // إنشاء بيانات اعتماد Firebase
+    final AuthCredential credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
 
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      print('Got auth credentials');
+    // تسجيل الدخول في Firebase للحصول على بيانات المستخدم الكاملة
+    final UserCredential userCredential =
+        await FirebaseAuth.instance.signInWithCredential(credential);
 
-      if (googleAuth.idToken == null) {
-        throw Exception('لم يتم الحصول على رمز المصادقة من جوجل');
-      }
+    if (mounted) {
+      setState(() {
+        _currentUser = userCredential.user;
+        _isSigningIn = false;
+      });
 
-      // Create a new credential
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'مرحباً ${userCredential.user?.displayName ?? "بك"} 👋'),
+          backgroundColor: Colors.green,
+        ),
       );
-      print('Created Firebase credential');
+    }
 
-      // Sign in to Firebase with the Google credentials
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-      print('Firebase sign-in successful: ${userCredential.user?.email}');
+  } catch (e) {
+    print("Google Sign-In Error: $e");
 
-      if (mounted) {
-        setState(() {
-          _currentUser = userCredential.user;
-          _isSigningIn = false;
-        });
+    if (mounted) {
+      setState(() {
+        _isSigningIn = false;
+      });
 
-        // Show success message
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('تم تسجيل الدخول بنجاح: ${userCredential.user?.displayName}'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print('Google Sign-In Error: $e');
-      if (mounted) {
-        setState(() {
-          _isSigningIn = false;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل تسجيل الدخول: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل تسجيل الدخول: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
-
+}
   Future<void> _handleSignOut() async {
     try {
       await _googleSignIn.signOut();
@@ -3276,71 +3216,129 @@ class _SettingsPageState extends State<SettingsPage> {
       // User is logged in - show user info card
       return _buildCard(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Row(
+            // صورة المستخدم الشخصية
+            Stack(
+              alignment: Alignment.bottomRight,
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundImage: _currentUser!.photoURL != null
-                      ? NetworkImage(_currentUser!.photoURL!)
-                      : null,
-                  backgroundColor: widget.isDark ? Colors.white12 : Colors.red.shade50,
-                  child: _currentUser!.photoURL == null
-                      ? const Icon(Icons.person, color: Colors.red, size: 30)
-                      : null,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _currentUser!.displayName ?? 'مستخدم',
-                        style: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: widget.isDark ? Colors.white : Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _currentUser!.email ?? '',
-                        style: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontSize: 14,
-                          color: widget.isDark ? Colors.white70 : Colors.black54,
-                        ),
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.red,
+                      width: 2.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.red.withOpacity(0.3),
+                        blurRadius: 12,
+                        spreadRadius: 2,
                       ),
                     ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundImage: _currentUser!.photoURL != null
+                        ? NetworkImage(_currentUser!.photoURL!)
+                        : null,
+                    backgroundColor: widget.isDark ? Colors.white12 : Colors.red.shade50,
+                    child: _currentUser!.photoURL == null
+                        ? const Icon(Icons.person, color: Colors.red, size: 40)
+                        : null,
+                  ),
+                ),
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: widget.isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                      width: 2,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withOpacity(0.1),
-                    foregroundColor: Colors.red,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _handleSignOut,
-                  icon: const Icon(Icons.logout, size: 18),
-                  label: const Text(
-                    'تسجيل الخروج',
+            const SizedBox(height: 12),
+            // اسم المستخدم
+            Text(
+              _currentUser!.displayName ?? 'مستخدم',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: widget.isDark ? Colors.white : Colors.black,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            // شارة العضو المميز
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.red.shade700,
+                    Colors.red.shade400,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                  SizedBox(width: 5),
+                  Text(
+                    'عضو مميز في سكربتاتي',
                     style: TextStyle(
                       fontFamily: 'Tajawal',
+                      fontSize: 13,
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // البريد الإلكتروني
+            Text(
+              _currentUser!.email ?? '',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 13,
+                color: widget.isDark ? Colors.white54 : Colors.black45,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            // زر تسجيل الخروج
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.withOpacity(0.1),
+                  foregroundColor: Colors.red,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Colors.red.withOpacity(0.3)),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-              ],
+                onPressed: _handleSignOut,
+                icon: const Icon(Icons.logout, size: 18),
+                label: const Text(
+                  'تسجيل الخروج',
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
