@@ -202,12 +202,14 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool isDark = true;
+  User? _currentUser;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     loadTheme();
+    _checkCurrentUser();
     PostNotificationMonitor.start();
   }
 
@@ -216,6 +218,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     setState(() {
       isDark = prefs.getBool("theme") ?? true;
     });
+  }
+
+  Future<void> _checkCurrentUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (mounted) {
+      setState(() {
+        _currentUser = user;
+      });
+    }
   }
 
   void toggleTheme() async {
@@ -254,6 +265,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       home: MainShell(
         isDark: isDark,
         onToggle: toggleTheme,
+        currentUser: _currentUser,
       ),
     );
   }
@@ -262,7 +274,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 class MainShell extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggle;
-  const MainShell({required this.isDark, required this.onToggle});
+  final User? currentUser;
+  const MainShell({required this.isDark, required this.onToggle, this.currentUser});
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -376,6 +389,7 @@ class _MainShellState extends State<MainShell> {
           HomePage(
             isDark: widget.isDark, 
             onToggle: widget.onToggle,
+            currentUser: widget.currentUser,
             onRegisterScrollCallback: (callback) {
               _homeScrollToTopCallback = callback;
             },
@@ -964,14 +978,100 @@ class PostNotificationMonitor {
   }
 }
 
+class PostSearchDelegate extends SearchDelegate<String> {
+  final List<PostItem> posts;
+  final bool isDark;
+
+  PostSearchDelegate({required this.posts, required this.isDark});
+
+  @override
+  String get searchFieldLabel => 'البحث في المنشورات...';
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, '');
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    final results = posts.where((post) =>
+        post.title.toLowerCase().contains(query.toLowerCase()) ||
+        post.description.toLowerCase().contains(query.toLowerCase())).toList();
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: ListView.builder(
+        itemCount: results.length,
+        itemBuilder: (context, index) {
+          final post = results[index];
+          return ListTile(
+            title: Text(post.title, style: TextStyle(color: isDark ? Colors.white : Colors.black)),
+            subtitle: Text(stripHtmlTags(post.description), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PostDetailsPage(post: post, isDark: isDark),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    final suggestions = posts.where((post) =>
+        post.title.toLowerCase().contains(query.toLowerCase())).toList();
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: ListView.builder(
+        itemCount: suggestions.length,
+        itemBuilder: (context, index) {
+          final post = suggestions[index];
+          return ListTile(
+            title: Text(post.title, style: TextStyle(color: isDark ? Colors.white : Colors.black)),
+            onTap: () {
+              query = post.title;
+              showResults(context);
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
 class HomePage extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggle;
+  final User? currentUser;
   final Function(VoidCallback)? onRegisterScrollCallback;
 
   const HomePage({
     required this.isDark, 
     required this.onToggle,
+    this.currentUser,
     this.onRegisterScrollCallback,
   });
 
@@ -1081,46 +1181,75 @@ class _HomePageState extends State<HomePage>
           ),
           backgroundColor: isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
           title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Transform.translate(
-                    offset: const Offset(0, -2),
-                    child: ColorFiltered(
-                      colorFilter: isDark
-                          ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
-                          : const ColorFilter.mode(Colors.red, BlendMode.srcIn),
-                      child: Image.asset(
-                        "assets/images/logo.png",
-                        height: 35,
-                        errorBuilder: (c, e, s) {
-                          return const Icon(Icons.image_not_supported);
-                        },
-                      ),
-                    ),
+              Transform.translate(
+                offset: const Offset(0, -2),
+                child: ColorFiltered(
+                  colorFilter: isDark
+                      ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
+                      : const ColorFilter.mode(Colors.red, BlendMode.srcIn),
+                  child: Image.asset(
+                    "assets/images/logo.png",
+                    height: 35,
+                    errorBuilder: (c, e, s) {
+                      return const Icon(Icons.image_not_supported);
+                    },
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    "سكربتاتي",
-                    style: TextStyle(
-                      fontFamily: "Tajawal",
-                      fontSize: 24,
-                      color: isDark ? Colors.white : Colors.red,
-                    ),
-                  ),
-                ],
+                ),
               ),
-              Transform.scale(
-                scale: 0.8,
-                child: Switch(
-                  value: isDark,
-                  onChanged: (v) => widget.onToggle(),
-                  activeColor: Colors.red,
+              const SizedBox(width: 10),
+              Text(
+                "سكربتاتي",
+                style: TextStyle(
+                  fontFamily: "Tajawal",
+                  fontSize: 24,
+                  color: isDark ? Colors.white : Colors.red,
                 ),
               ),
             ],
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.search, color: Colors.red),
+              onPressed: () async {
+                final posts = await _postsFuture;
+                showSearch(
+                  context: context,
+                  delegate: PostSearchDelegate(posts: posts, isDark: isDark),
+                );
+              },
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SettingsPage(
+                      isDark: widget.isDark,
+                      onToggle: widget.onToggle,
+                      highlightLogin: true,
+                    ),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundImage: widget.currentUser?.photoURL != null
+                      ? NetworkImage(widget.currentUser!.photoURL!)
+                      : null,
+                  child: widget.currentUser?.photoURL == null
+                      ? Icon(
+                          Icons.account_circle,
+                          color: isDark ? Colors.white : Colors.black,
+                          size: 36,
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ],
         ),
         body: RefreshIndicator(
           onRefresh: _refreshPosts,
@@ -3437,7 +3566,8 @@ class _StarRainPainter extends CustomPainter {
 class SettingsPage extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggle;
-  const SettingsPage({required this.isDark, required this.onToggle});
+  final bool highlightLogin;
+  const SettingsPage({required this.isDark, required this.onToggle, this.highlightLogin = false});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
