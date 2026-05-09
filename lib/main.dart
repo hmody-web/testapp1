@@ -20,7 +20,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:http/http.dart' as http;
-import 'package:video_player/video_player.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
@@ -407,54 +406,6 @@ class _BrowserButton extends StatelessWidget {
         ),
         child: Icon(icon, color: color, size: 20),
       ),
-    );
-  }
-}
-
-// ============================================================
-// 🎬 VideoLogoWidget - لوجو فيديو في AppBar
-// ============================================================
-class VideoLogoWidget extends StatefulWidget {
-  final double height;
-  const VideoLogoWidget({Key? key, this.height = 35}) : super(key: key);
-
-  @override
-  State<VideoLogoWidget> createState() => _VideoLogoWidgetState();
-}
-
-class _VideoLogoWidgetState extends State<VideoLogoWidget> {
-  late VideoPlayerController _controller;
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.asset("assets/images/logo.mov")
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() => _initialized = true);
-          _controller.setLooping(true);
-          _controller.setVolume(0);
-          _controller.play();
-        }
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_initialized) {
-      return SizedBox(height: widget.height, width: widget.height);
-    }
-    return SizedBox(
-      height: widget.height,
-      width: widget.height * _controller.value.aspectRatio,
-      child: VideoPlayer(_controller),
     );
   }
 }
@@ -2236,7 +2187,18 @@ class _HomePageState extends State<HomePage>
             children: [
               Transform.translate(
                 offset: const Offset(0, -2),
-                child: VideoLogoWidget(height: 35),
+                child: ColorFiltered(
+                  colorFilter: isDark
+                      ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
+                      : const ColorFilter.mode(Colors.red, BlendMode.srcIn),
+                  child: Image.asset(
+                    "assets/images/logo.gif",
+                    height: 35,
+                    errorBuilder: (c, e, s) {
+                      return const Icon(Icons.image_not_supported);
+                    },
+                  ),
+                ),
               ),
               const SizedBox(width: 10),
               Text(
@@ -2366,7 +2328,7 @@ class _HomePageState extends State<HomePage>
                     padding: const EdgeInsets.symmetric(horizontal: 15),
                     child: Row(
                       children: [
-                        _card(context, Icons.storage, "استضافة\nالمواقع", HostingPage(), isDark),
+                        _card(context, Icons.storage, " السكربتات \n والقوالب", HostingPage(), isDark),
                         _card(context, Icons.shopping_cart, "متاجر\nالكترونية", StorePage(), isDark),
                         _card(context, Icons.phone_android, "تطبيقات\nالموبايل", AppsPage(), isDark),
                       ],
@@ -5763,7 +5725,7 @@ class _HostingPageState extends State<HostingPage> {
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(
-            'استضافة المواقع',
+            ' القوالب والسكربتات',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Tajawal',
