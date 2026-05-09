@@ -1381,6 +1381,186 @@ class PostNotificationMonitor {
   }
 }
 
+// ============================================================
+// 🔍 صفحة البحث المخصصة - نص عربي من اليمين
+// ============================================================
+class _CustomSearchPage extends StatefulWidget {
+  final List<PostItem> posts;
+  final bool isDark;
+  const _CustomSearchPage({required this.posts, required this.isDark});
+
+  @override
+  State<_CustomSearchPage> createState() => _CustomSearchPageState();
+}
+
+class _CustomSearchPageState extends State<_CustomSearchPage> {
+  final TextEditingController _controller = TextEditingController();
+  List<PostItem> _results = [];
+  bool _hasQuery = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _results = widget.posts.take(10).toList();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String query) {
+    setState(() {
+      _hasQuery = query.isNotEmpty;
+      if (query.isEmpty) {
+        _results = widget.posts.take(10).toList();
+      } else {
+        _results = widget.posts.where((p) =>
+          p.title.toLowerCase().contains(query.toLowerCase()) ||
+          p.description.toLowerCase().contains(query.toLowerCase())
+        ).toList();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF111111) : Colors.white,
+        appBar: AppBar(
+          backgroundColor: isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+          automaticallyImplyLeading: false,
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Divider(height: 1, color: Colors.red),
+          ),
+          title: TextField(
+            controller: _controller,
+            autofocus: true,
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 17,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+            decoration: InputDecoration(
+              hintText: 'البحث في المنشورات...',
+              hintStyle: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 16,
+                color: isDark ? Colors.white38 : Colors.black38,
+              ),
+              hintTextDirection: TextDirection.rtl,
+              border: InputBorder.none,
+              suffixIcon: _hasQuery
+                  ? IconButton(
+                      icon: Icon(Icons.clear, color: isDark ? Colors.white54 : Colors.black45),
+                      onPressed: () {
+                        _controller.clear();
+                        _onChanged('');
+                      },
+                    )
+                  : Icon(Icons.search, color: Colors.red),
+            ),
+            cursorColor: Colors.red,
+            onChanged: _onChanged,
+          ),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: isDark ? Colors.white : Colors.black),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: _results.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.search_off, size: 64, color: isDark ? Colors.white30 : Colors.black26),
+                    const SizedBox(height: 16),
+                    Text(
+                      'لا توجد نتائج',
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 18,
+                        color: isDark ? Colors.white54 : Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ListView.separated(
+                itemCount: _results.length,
+                separatorBuilder: (_, __) => Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: isDark ? Colors.white12 : Colors.black12,
+                ),
+                itemBuilder: (context, index) {
+                  final post = _results[index];
+                  return ListTile(
+                    leading: post.imageUrl.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              post.encodedImageUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                width: 50,
+                                height: 50,
+                                color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                                child: const Icon(Icons.image, color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        : null,
+                    title: Text(
+                      post.title,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                      textAlign: TextAlign.right,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: post.description.isNotEmpty
+                        ? Text(
+                            stripHtmlTags(post.description),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Tajawal',
+                              fontSize: 13,
+                              color: isDark ? Colors.white60 : Colors.black54,
+                            ),
+                            textAlign: TextAlign.right,
+                          )
+                        : null,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        _SlideFromLeftRoute(
+                          page: PostDetailsPage(post: post, isDark: isDark),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
 class PostSearchDelegate extends SearchDelegate<String> {
   final List<PostItem> posts;
   final bool isDark;
@@ -1393,12 +1573,25 @@ class PostSearchDelegate extends SearchDelegate<String> {
   @override
   ThemeData appBarTheme(BuildContext context) {
     final theme = super.appBarTheme(context);
-    return theme.copyWith(
+    // لجعل النص العربي يبدأ من اليمين نستخدم textDirection RTL في الـ theme
+    return ThemeData(
+      brightness: isDark ? Brightness.dark : Brightness.light,
+      scaffoldBackgroundColor:
+          isDark ? const Color(0xFF111111) : Colors.white,
+      appBarTheme: AppBarTheme(
+        backgroundColor:
+            isDark ? const Color.fromARGB(255, 22, 22, 22) : Colors.white,
+        iconTheme: IconThemeData(
+          color: isDark ? Colors.white : Colors.black,
+        ),
+        actionsIconTheme: IconThemeData(
+          color: isDark ? Colors.white : Colors.black,
+        ),
+      ),
       textTheme: theme.textTheme.copyWith(
         titleLarge: TextStyle(
           fontFamily: 'Tajawal',
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
+          fontSize: 16,
           color: isDark ? Colors.white : Colors.black,
         ),
       ),
@@ -1410,6 +1603,20 @@ class PostSearchDelegate extends SearchDelegate<String> {
         ),
         alignLabelWithHint: true,
       ),
+      // هذا هو المفتاح: تعيين اتجاه النص RTL في الـ theme
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: Colors.red,
+        selectionColor: Colors.red.withOpacity(0.3),
+        selectionHandleColor: Colors.red,
+      ),
+    );
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, ''),
     );
   }
 
@@ -1418,21 +1625,14 @@ class PostSearchDelegate extends SearchDelegate<String> {
     return [
       IconButton(
         icon: const Icon(Icons.clear),
-        onPressed: () {
-          query = '';
-        },
+        onPressed: () => query = '',
       ),
     ];
   }
 
   @override
-  Widget buildLeading(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back),
-      onPressed: () {
-        close(context, '');
-      },
-    );
+  PreferredSizeWidget buildBottom(BuildContext context) {
+    return PreferredSize(preferredSize: Size.zero, child: SizedBox.shrink());
   }
 
   @override
@@ -2018,9 +2218,11 @@ class _HomePageState extends State<HomePage>
               icon: const Icon(Icons.search, color: Colors.red),
               onPressed: () async {
                 final posts = await _postsFuture;
-                showSearch(
-                  context: context,
-                  delegate: PostSearchDelegate(posts: posts, isDark: isDark),
+                Navigator.push(
+                  context,
+                  _SlideFromLeftRoute(
+                    page: _CustomSearchPage(posts: posts, isDark: isDark),
+                  ),
                 );
               },
             ),
@@ -2258,6 +2460,97 @@ class _HomePageState extends State<HomePage>
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // ── كرت الموقع الأخضر ──
+                GestureDetector(
+                  onTap: () => openInAppBrowser(
+                    context,
+                    'https://www.scrptaty.com',
+                    title: 'سكربتاتي',
+                    isDark: isDark,
+                  ),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 15),
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1B8A4C), Color(0xFF25D366), Color(0xFF128C50)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF25D366).withOpacity(0.45),
+                          blurRadius: 18,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // أيقونة الكرة الأرضية
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.language_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // النص
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'WWW.SCRPTATY.COM',
+                              style: TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'زيارة الموقع الرسمي',
+                              style: TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        // سهم
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -4476,7 +4769,11 @@ Future<void> _handleGoogleSignIn() async {
           ),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 95),
+          margin: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.of(context).padding.bottom + 16,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -4531,7 +4828,11 @@ Future<void> _handleGoogleSignIn() async {
             ),
             backgroundColor: Colors.orange.shade700,
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 95),
+            margin: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 16,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),
@@ -5404,12 +5705,12 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
             // الفتح: الصفحة تدخل من اليسار إلى اليمين
             // الإغلاق: الصفحة تخرج نحو اليسار
             final slideAnimation = Tween<Offset>(
-              begin: const Offset(-1.0, 0.0), // تبدأ من اليسار
+              begin: const Offset(-1.0, 0.0), // تبدأ من اليسار عند الفتح
               end: Offset.zero,
             ).animate(CurvedAnimation(
               parent: animation,
               curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic, // عند الإغلاق تخرج يساراً
+              reverseCurve: Curves.easeInCubic,
             ));
 
             final fadeIn = Tween<double>(
@@ -5424,10 +5725,9 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
             return ValueListenableBuilder<double>(
               valueListenable: _globalDragNotifier,
               builder: (_, drag, __) {
-                // drag موجب = المستخدم يسحب يساراً للإغلاق
-                // نحوّل حركة السحب إلى إزاحة يسارية (سالبة)
+                // drag موجب = المستخدم يسحب يميناً للخروج
                 final w = MediaQuery.of(context).size.width;
-                final swipeFraction = drag > 0 ? -(drag / w) : 0.0;
+                final swipeFraction = drag > 0 ? (drag / w) : 0.0;
                 final position = drag > 0
                     ? AlwaysStoppedAnimation(Offset(swipeFraction, 0.0))
                     : slideAnimation;
@@ -5453,9 +5753,11 @@ class _SwipeToCloseWrapper extends StatefulWidget {
 }
 
 class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
-  double _dragStartX = 0;
   double _dragOffset = 0;
   bool _isDragging = false;
+  double _dragStartX = 0;
+  final double _dragThreshold = 80.0;
+  final double _velocityThreshold = 300.0;
 
   @override
   void dispose() {
@@ -5463,47 +5765,72 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
     super.dispose();
   }
 
+  void _onDragStart(double x) {
+    _dragStartX = x;
+    _isDragging = true;
+  }
+
+  void _onDragUpdate(double x) {
+    if (!_isDragging) return;
+    final delta = x - _dragStartX;
+    // السحب من اليمين يزيد الـ offset (delta موجب)
+    if (delta > 0) {
+      setState(() => _dragOffset = delta);
+      _globalDragNotifier.value = delta;
+    }
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    if (!_isDragging) return;
+    _isDragging = false;
+    _globalDragNotifier.value = 0;
+    
+    // حساب السرعة الأفقية (primaryVelocity.dx للسحب الأفقي)
+    final velocity = details.velocity.pixelsPerSecond.dx;
+    
+    // إغلاق الصفحة إذا تم السحب بما يكفي أو بسرعة عالية من اليمين
+    if (_dragOffset > _dragThreshold || velocity > _velocityThreshold) {
+      Navigator.pop(context);
+    } else {
+      // إرجاع الصفحة إلى موضعها الأصلي
+      _animateBackToPosition();
+    }
+  }
+
+  void _animateBackToPosition() {
+    setState(() => _dragOffset = 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
+    // زيادة عرض منطقة السحب من الحافة اليمنى
+    const edgeWidth = 50.0;
 
-    return GestureDetector(
-      onHorizontalDragStart: (details) {
-        // السحب من الجانب الأيسر
-        if (details.globalPosition.dx < screenWidth * 0.25) {
-          _dragStartX = details.globalPosition.dx;
-          _isDragging = true;
-        }
-      },
-      onHorizontalDragUpdate: (details) {
-        if (!_isDragging) return;
-        final delta = details.globalPosition.dx - _dragStartX;
-        // السحب يساراً (delta سالب) = تحريك الصفحة يساراً
-        if (delta < 0) {
-          setState(() => _dragOffset = delta);
-          _globalDragNotifier.value = -delta; // نمرر موجب لـ notifier (يُقرأ كمسافة سحب)
-        }
-      },
-      onHorizontalDragEnd: (details) {
-        if (!_isDragging) return;
-        _isDragging = false;
-        _globalDragNotifier.value = 0;
-
-        if (_dragOffset < -100 ||
-            (details.primaryVelocity != null &&
-                details.primaryVelocity! < -500)) {
-          Navigator.pop(context);
-        } else {
-          setState(() => _dragOffset = 0);
-        }
-      },
-      child: Transform.translate(
-        offset: Offset(_dragOffset, 0), // _dragOffset سالب = يتحرك يساراً
-        child: Material(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          child: widget.child,
+    return Stack(
+      children: [
+        // الصفحة الرئيسية مع إزاحة السحب
+        Transform.translate(
+          offset: Offset(_dragOffset, 0),
+          child: Material(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: widget.child,
+          ),
         ),
-      ),
+        // منطقة شفافة على الحافة اليمنى تستجيب للسحب فوق أي widget
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: edgeWidth,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: (d) => _onDragStart(d.globalPosition.dx),
+            onHorizontalDragUpdate: (d) => _onDragUpdate(d.globalPosition.dx),
+            onHorizontalDragEnd: _onDragEnd,
+          ),
+        ),
+      ],
     );
   }
 }
