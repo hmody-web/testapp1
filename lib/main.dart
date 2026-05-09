@@ -597,13 +597,21 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool isDark = true;
   User? _currentUser;
+  late final StreamSubscription<User?> _authSubscription;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     loadTheme();
-    _checkCurrentUser();
+    // الاستماع لتغييرات حالة المصادقة بشكل مباشر
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+        });
+      }
+    });
     PostNotificationMonitor.start();
   }
 
@@ -645,6 +653,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authSubscription.cancel();
     PostNotificationMonitor.stop();
     super.dispose();
   }
@@ -1386,10 +1395,11 @@ class PostSearchDelegate extends SearchDelegate<String> {
     final theme = super.appBarTheme(context);
     return theme.copyWith(
       textTheme: theme.textTheme.copyWith(
-        titleLarge: const TextStyle(
+        titleLarge: TextStyle(
           fontFamily: 'Tajawal',
           fontSize: 18,
           fontWeight: FontWeight.bold,
+          color: isDark ? Colors.white : Colors.black,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -1398,6 +1408,7 @@ class PostSearchDelegate extends SearchDelegate<String> {
           fontSize: 16,
           color: isDark ? Colors.white54 : Colors.black54,
         ),
+        alignLabelWithHint: true,
       ),
     );
   }
@@ -1767,6 +1778,195 @@ class _HomePageState extends State<HomePage>
     super.dispose();
   }
 
+  void _showUserPopup(BuildContext context) {
+    final isDark = widget.isDark;
+    final user = widget.currentUser;
+    final RenderBox appBarBox = context.findRenderObject() as RenderBox;
+    final Size screenSize = MediaQuery.of(context).size;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (ctx, animation, secondaryAnimation) {
+        return Stack(
+          children: [
+            // خلفية شفافة للإغلاق عند النقر
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+            // البطاقة
+            Positioned(
+              top: MediaQuery.of(context).padding.top + kToolbarHeight + 4,
+              left: 12,
+              child: FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+                    CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+                  ),
+                  alignment: Alignment.topLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // السهم المثلث على يسار المستطيل
+                      Padding(
+                        padding: const EdgeInsets.only(left: 20),
+                        child: CustomPaint(
+                          size: const Size(16, 10),
+                          painter: _TrianglePainter(
+                            color: isDark ? const Color(0xFF2A2A2A) : Colors.white,
+                          ),
+                        ),
+                      ),
+                      // المستطيل
+                      Container(
+                        width: 220,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF2A2A2A) : Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(isDark ? 0.4 : 0.15),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: isDark ? Colors.white12 : Colors.black12,
+                            width: 0.5,
+                          ),
+                        ),
+                        child: user != null
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 28,
+                                    backgroundImage: user.photoURL != null
+                                        ? NetworkImage(user.photoURL!)
+                                        : null,
+                                    backgroundColor: isDark ? Colors.white12 : Colors.red.shade50,
+                                    child: user.photoURL == null
+                                        ? const Icon(Icons.person, color: Colors.red, size: 28)
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    user.displayName ?? 'مستخدم',
+                                    style: TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    user.email ?? '',
+                                    style: TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 13,
+                                      color: isDark ? Colors.white54 : Colors.black54,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.green.withOpacity(0.4), width: 0.5),
+                                    ),
+                                    child: const Text(
+                                      'مسجل دخول بنجاح ✓',
+                                      style: TextStyle(
+                                        fontFamily: 'Tajawal',
+                                        fontSize: 12,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.account_circle_outlined,
+                                    size: 44,
+                                    color: isDark ? Colors.white54 : Colors.black45,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'غير مسجل دخول',
+                                    style: TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  GestureDetector(
+                                    onTap: () {
+                                      Navigator.pop(ctx);
+                                      Navigator.push(
+                                        context,
+                                        _SlideFromLeftRoute(
+                                          page: SettingsPage(
+                                            isDark: widget.isDark,
+                                            onToggle: widget.onToggle,
+                                            highlightLogin: true,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: const Text(
+                                        'اذهب إلى الإعدادات',
+                                        style: TextStyle(
+                                          fontFamily: 'Tajawal',
+                                          fontSize: 13,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -1826,16 +2026,8 @@ class _HomePageState extends State<HomePage>
             ),
             GestureDetector(
               onTap: () {
-                Navigator.push(
-                  context,
-                  _SlideFromLeftRoute(
-                    page: SettingsPage(
-                      isDark: widget.isDark,
-                      onToggle: widget.onToggle,
-                      highlightLogin: true,
-                    ),
-                  ),
-                );
+                // إظهار popup بمعلومات المستخدم
+                _showUserPopup(context);
               },
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -4284,7 +4476,7 @@ Future<void> _handleGoogleSignIn() async {
           ),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 89),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 95),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -4339,7 +4531,7 @@ Future<void> _handleGoogleSignIn() async {
             ),
             backgroundColor: Colors.orange.shade700,
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 89),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 95),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),
@@ -5100,6 +5292,28 @@ Future<void> _handleGoogleSignIn() async {
 }
 
 // ============================================================
+// مرسم المثلث للـ popup
+// ============================================================
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  const _TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_TrianglePainter oldDelegate) => oldDelegate.color != color;
+}
+
+// ============================================================
 // 🔥 الكرت مع انتقال من اليسار لليمين
 // ============================================================
 class _HoverCard extends StatefulWidget {
@@ -5187,12 +5401,15 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
           pageBuilder: (context, animation, secondaryAnimation) =>
               _SwipeToCloseWrapper(child: page),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final scaleIn = Tween<double>(
-              begin: 0.85,
-              end: 1.0,
+            // الفتح: الصفحة تدخل من اليسار إلى اليمين
+            // الإغلاق: الصفحة تخرج نحو اليسار
+            final slideAnimation = Tween<Offset>(
+              begin: const Offset(-1.0, 0.0), // تبدأ من اليسار
+              end: Offset.zero,
             ).animate(CurvedAnimation(
               parent: animation,
-              curve: Curves.easeOutBack,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic, // عند الإغلاق تخرج يساراً
             ));
 
             final fadeIn = Tween<double>(
@@ -5201,22 +5418,24 @@ class _SlideFromLeftRoute extends PageRouteBuilder {
             ).animate(CurvedAnimation(
               parent: animation,
               curve: Curves.easeIn,
+              reverseCurve: Curves.easeOut,
             ));
 
             return ValueListenableBuilder<double>(
               valueListenable: _globalDragNotifier,
               builder: (_, drag, __) {
-                return Transform.translate(
-                  offset: Offset(drag * 0.3, 0),
+                // drag موجب = المستخدم يسحب يساراً للإغلاق
+                // نحوّل حركة السحب إلى إزاحة يسارية (سالبة)
+                final w = MediaQuery.of(context).size.width;
+                final swipeFraction = drag > 0 ? -(drag / w) : 0.0;
+                final position = drag > 0
+                    ? AlwaysStoppedAnimation(Offset(swipeFraction, 0.0))
+                    : slideAnimation;
+                return SlideTransition(
+                  position: position,
                   child: FadeTransition(
                     opacity: fadeIn,
-                    child: Transform.scale(
-                      scale: scaleIn.value,
-                      child: Transform.translate(
-                        offset: Offset(-drag * 0.3, 0),
-                        child: child,
-                      ),
-                    ),
+                    child: child,
                   ),
                 );
               },
@@ -5250,7 +5469,8 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
 
     return GestureDetector(
       onHorizontalDragStart: (details) {
-        if (details.globalPosition.dx > screenWidth * 0.75) {
+        // السحب من الجانب الأيسر
+        if (details.globalPosition.dx < screenWidth * 0.25) {
           _dragStartX = details.globalPosition.dx;
           _isDragging = true;
         }
@@ -5258,9 +5478,10 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
       onHorizontalDragUpdate: (details) {
         if (!_isDragging) return;
         final delta = details.globalPosition.dx - _dragStartX;
+        // السحب يساراً (delta سالب) = تحريك الصفحة يساراً
         if (delta < 0) {
           setState(() => _dragOffset = delta);
-          _globalDragNotifier.value = delta;
+          _globalDragNotifier.value = -delta; // نمرر موجب لـ notifier (يُقرأ كمسافة سحب)
         }
       },
       onHorizontalDragEnd: (details) {
@@ -5277,7 +5498,7 @@ class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
         }
       },
       child: Transform.translate(
-        offset: Offset(_dragOffset, 0),
+        offset: Offset(_dragOffset, 0), // _dragOffset سالب = يتحرك يساراً
         child: Material(
           color: Theme.of(context).scaffoldBackgroundColor,
           child: widget.child,
@@ -5388,7 +5609,7 @@ class _HostingPageState extends State<HostingPage> {
 
   Widget _buildScriptCard(ScriptItem script, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: double.infinity,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -5396,44 +5617,65 @@ class _HostingPageState extends State<HostingPage> {
           color: isDark ? Colors.white12 : Colors.black12,
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (script.imageUrl.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.network(
-                script.encodedImageUrl,
-                width: 90,
-                height: 90,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 90,
-                  height: 90,
-                  color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
-                  child: const Icon(Icons.broken_image_outlined, color: Colors.red),
-                ),
-              ),
-            ),
-          if (script.imageUrl.isNotEmpty) const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  script.title.isNotEmpty ? script.title : 'سكربت جديد',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontFamily: 'Tajawal',
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black,
+          // الصورة بنسبة 16:9
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: script.imageUrl.isNotEmpty
+                ? Image.network(
+                    script.encodedImageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return Container(
+                        color: isDark
+                            ? const Color.fromARGB(255, 32, 32, 32)
+                            : Colors.grey[300],
+                        child: const Center(
+                          child: CircularProgressIndicator(color: Colors.red),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined, color: Colors.red, size: 48),
+                      ),
+                    ),
+                  )
+                : Container(
+                    color: isDark ? const Color(0xFF2A2A2A) : Colors.grey[300],
+                    child: const Center(
+                      child: Icon(Icons.image, color: Colors.grey, size: 48),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+          ),
+          // العنوان تحت الصورة
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              script.title.isNotEmpty ? script.title : 'سكربت جديد',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
