@@ -58,7 +58,7 @@ flutter_icons:
   android: true
   ios: true
   image_path: assets/images/icon.png
-  
+   
 flutter_native_splash:
   color: "#121212" # 🔥 الخلفية
   image: assets/images/logo.png # 🔥 اللوجو
