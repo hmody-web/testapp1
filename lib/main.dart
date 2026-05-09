@@ -662,6 +662,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      locale: const Locale('ar'), // يجعل CupertinoPageRoute يسحب من اليمين
       theme: ThemeData.light(),
       darkTheme: ThemeData.dark(),
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
@@ -802,12 +803,15 @@ class _MainShellState extends State<MainShell> {
           SettingsPage(isDark: widget.isDark, onToggle: widget.onToggle),
         ],
       ),
-      bottomNavigationBar: _GlassNavBar(
-        currentPage: _currentPage,
-        currentIndex: _currentIndex,
-        items: _items,
-        isDark: widget.isDark,
-        onTap: _onTabTap,
+      bottomNavigationBar: Directionality(
+        textDirection: TextDirection.ltr,
+        child: _GlassNavBar(
+          currentPage: _currentPage,
+          currentIndex: _currentIndex,
+          items: _items,
+          isDark: widget.isDark,
+          onTap: _onTabTap,
+        ),
       ),
     );
   }
@@ -1548,9 +1552,7 @@ class _CustomSearchPageState extends State<_CustomSearchPage> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        _SlideFromLeftRoute(
-                          page: PostDetailsPage(post: post, isDark: isDark),
-                        ),
+                        CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
                       );
                     },
                   );
@@ -1721,9 +1723,7 @@ class PostSearchDelegate extends SearchDelegate<String> {
             onTap: () {
               Navigator.push(
                 context,
-                _SlideFromLeftRoute(
-                  page: PostDetailsPage(post: post, isDark: isDark),
-                ),
+                CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
               );
             },
           );
@@ -2127,12 +2127,10 @@ class _HomePageState extends State<HomePage>
                                       Navigator.pop(ctx);
                                       Navigator.push(
                                         context,
-                                        _SlideFromLeftRoute(
-                                          page: SettingsPage(
+                                        CupertinoPageRoute(builder: (_) => SettingsPage(
                                             isDark: widget.isDark,
                                             onToggle: widget.onToggle,
-                                            highlightLogin: true,
-                                          ),
+                                            highlightLogin: true),
                                         ),
                                       );
                                     },
@@ -2220,9 +2218,7 @@ class _HomePageState extends State<HomePage>
                 final posts = await _postsFuture;
                 Navigator.push(
                   context,
-                  _SlideFromLeftRoute(
-                    page: _CustomSearchPage(posts: posts, isDark: isDark),
-                  ),
+                  CupertinoPageRoute(builder: (_) => _CustomSearchPage(posts: posts, isDark: isDark)),
                 );
               },
             ),
@@ -2795,9 +2791,7 @@ class _HomePageState extends State<HomePage>
         markPostAsViewed(post);
         Navigator.push(
           context,
-          _SlideFromLeftRoute(
-            page: PostDetailsPage(post: post, isDark: isDark),
-          ),
+          CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
         );
       },
       child: Container(
@@ -2939,9 +2933,7 @@ class _ExpandablePostDescription extends StatelessWidget {
                 markPostAsViewed(post);
                 Navigator.push(
                   context,
-                  _SlideFromLeftRoute(
-                    page: PostDetailsPage(post: post, isDark: isDark),
-                  ),
+                  CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
                 );
               },
               child: const Text(
@@ -5650,7 +5642,7 @@ class _HoverCardState extends State<_HoverCard> {
         onTap: () {
           Navigator.push(
             context,
-            _SlideFromLeftRoute(page: widget.page),
+            CupertinoPageRoute(builder: (_) => widget.page),
           );
         },
         child: AnimatedContainer(
@@ -5689,151 +5681,6 @@ class _HoverCardState extends State<_HoverCard> {
   }
 }
 
-final _globalDragNotifier = ValueNotifier<double>(0);
-
-class _SlideFromLeftRoute extends PageRouteBuilder {
-  final Widget page;
-
-  _SlideFromLeftRoute({required this.page})
-      : super(
-          opaque: false,
-          transitionDuration: const Duration(milliseconds: 300),
-          reverseTransitionDuration: const Duration(milliseconds: 300),
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              _SwipeToCloseWrapper(child: page),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            // الفتح: الصفحة تدخل من اليسار إلى اليمين
-            // الإغلاق: الصفحة تخرج نحو اليسار
-            final slideAnimation = Tween<Offset>(
-              begin: const Offset(-1.0, 0.0), // تبدأ من اليسار عند الفتح
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            ));
-
-            final fadeIn = Tween<double>(
-              begin: 0.0,
-              end: 1.0,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeIn,
-              reverseCurve: Curves.easeOut,
-            ));
-
-            return ValueListenableBuilder<double>(
-              valueListenable: _globalDragNotifier,
-              builder: (_, drag, __) {
-                // drag موجب = المستخدم يسحب يميناً للخروج
-                final w = MediaQuery.of(context).size.width;
-                final swipeFraction = drag > 0 ? (drag / w) : 0.0;
-                final position = drag > 0
-                    ? AlwaysStoppedAnimation(Offset(swipeFraction, 0.0))
-                    : slideAnimation;
-                return SlideTransition(
-                  position: position,
-                  child: FadeTransition(
-                    opacity: fadeIn,
-                    child: child,
-                  ),
-                );
-              },
-            );
-          },
-        );
-}
-
-class _SwipeToCloseWrapper extends StatefulWidget {
-  final Widget child;
-  const _SwipeToCloseWrapper({required this.child});
-
-  @override
-  State<_SwipeToCloseWrapper> createState() => _SwipeToCloseWrapperState();
-}
-
-class _SwipeToCloseWrapperState extends State<_SwipeToCloseWrapper> {
-  double _dragOffset = 0;
-  bool _isDragging = false;
-  double _dragStartX = 0;
-  final double _dragThreshold = 80.0;
-  final double _velocityThreshold = 300.0;
-
-  @override
-  void dispose() {
-    _globalDragNotifier.value = 0;
-    super.dispose();
-  }
-
-  void _onDragStart(double x) {
-    _dragStartX = x;
-    _isDragging = true;
-  }
-
-  void _onDragUpdate(double x) {
-    if (!_isDragging) return;
-    final delta = x - _dragStartX;
-    // السحب من اليمين يزيد الـ offset (delta موجب)
-    if (delta > 0) {
-      setState(() => _dragOffset = delta);
-      _globalDragNotifier.value = delta;
-    }
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    if (!_isDragging) return;
-    _isDragging = false;
-    _globalDragNotifier.value = 0;
-    
-    // حساب السرعة الأفقية (primaryVelocity.dx للسحب الأفقي)
-    final velocity = details.velocity.pixelsPerSecond.dx;
-    
-    // إغلاق الصفحة إذا تم السحب بما يكفي أو بسرعة عالية من اليمين
-    if (_dragOffset > _dragThreshold || velocity > _velocityThreshold) {
-      Navigator.pop(context);
-    } else {
-      // إرجاع الصفحة إلى موضعها الأصلي
-      _animateBackToPosition();
-    }
-  }
-
-  void _animateBackToPosition() {
-    setState(() => _dragOffset = 0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    // زيادة عرض منطقة السحب من الحافة اليمنى
-    const edgeWidth = 50.0;
-
-    return Stack(
-      children: [
-        // الصفحة الرئيسية مع إزاحة السحب
-        Transform.translate(
-          offset: Offset(_dragOffset, 0),
-          child: Material(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            child: widget.child,
-          ),
-        ),
-        // منطقة شفافة على الحافة اليمنى تستجيب للسحب فوق أي widget
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: edgeWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: (d) => _onDragStart(d.globalPosition.dx),
-            onHorizontalDragUpdate: (d) => _onDragUpdate(d.globalPosition.dx),
-            onHorizontalDragEnd: _onDragEnd,
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class HostingPage extends StatefulWidget {
   const HostingPage({super.key});
