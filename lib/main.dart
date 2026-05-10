@@ -59,6 +59,7 @@ class _InAppBrowserPageState extends State<InAppBrowserPage>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
+  // ── متغيرات السحب للإغلاق ──
   @override
   void initState() {
     super.initState();
@@ -411,11 +412,12 @@ class _BrowserButton extends StatelessWidget {
 }
 
 /// دالة مساعدة لفتح الروابط في المتصفح الداخلي
+/// CupertinoPageRoute يتعامل تلقائياً مع حركة الصفحتين وسحب الإغلاق
 void openInAppBrowser(BuildContext context, String url,
     {String title = '', bool isDark = true}) {
   Navigator.push(
     context,
-    MaterialPageRoute(
+    CupertinoPageRoute(
       builder: (_) => InAppBrowserPage(url: url, title: title, isDark: isDark),
     ),
   );
@@ -662,7 +664,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      locale: const Locale('ar'), // يجعل CupertinoPageRoute يسحب من اليمين
       theme: ThemeData.light(),
       darkTheme: ThemeData.dark(),
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
@@ -1552,7 +1553,7 @@ class _CustomSearchPageState extends State<_CustomSearchPage> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
+                        _LeftToRightPageRoute(page: _SwipeableLeftToRightPage(child: PostDetailsPage(post: post, isDark: isDark))),
                       );
                     },
                   );
@@ -1723,7 +1724,7 @@ class PostSearchDelegate extends SearchDelegate<String> {
             onTap: () {
               Navigator.push(
                 context,
-                CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
+                _LeftToRightPageRoute(page: _SwipeableLeftToRightPage(child: PostDetailsPage(post: post, isDark: isDark))),
               );
             },
           );
@@ -2218,7 +2219,7 @@ class _HomePageState extends State<HomePage>
                 final posts = await _postsFuture;
                 Navigator.push(
                   context,
-                  CupertinoPageRoute(builder: (_) => _CustomSearchPage(posts: posts, isDark: isDark)),
+                  _LeftToRightPageRoute(page: _SwipeableLeftToRightPage(child: _CustomSearchPage(posts: posts, isDark: isDark))),
                 );
               },
             ),
@@ -2254,7 +2255,7 @@ class _HomePageState extends State<HomePage>
           child: SingleChildScrollView(
             key: const PageStorageKey('home_scroll_position'),
             controller: _scrollController,
-            physics: const ClampingScrollPhysics(
+            physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
             ),
             child: Column(
@@ -2791,7 +2792,7 @@ class _HomePageState extends State<HomePage>
         markPostAsViewed(post);
         Navigator.push(
           context,
-          CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
+          _LeftToRightPageRoute(page: _SwipeableLeftToRightPage(child: PostDetailsPage(post: post, isDark: isDark))),
         );
       },
       child: Container(
@@ -2933,7 +2934,7 @@ class _ExpandablePostDescription extends StatelessWidget {
                 markPostAsViewed(post);
                 Navigator.push(
                   context,
-                  CupertinoPageRoute(builder: (_) => PostDetailsPage(post: post, isDark: isDark)),
+                  _LeftToRightPageRoute(page: _SwipeableLeftToRightPage(child: PostDetailsPage(post: post, isDark: isDark))),
                 );
               },
               child: const Text(
@@ -3110,6 +3111,12 @@ class ScriptItem {
 
   String get encodedImageUrl => Uri.encodeFull(imageUrl);
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'image': imageUrl,
+  };
+
   factory ScriptItem.fromJson(Map<String, dynamic> json) {
     final rawImage = json['image']?.toString().trim() ?? '';
     final resolvedImage = rawImage.isEmpty
@@ -3152,6 +3159,14 @@ class AppItem {
     return ext.length <= 5 ? ext.toUpperCase() : '';
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'image': imageUrl,
+    'file': fileUrl,
+    'file_size': fileSize,
+  };
+
   factory AppItem.fromJson(Map<String, dynamic> json) {
     final rawImage = json['image']?.toString().trim() ?? '';
     final resolvedImage = rawImage.isEmpty
@@ -3177,71 +3192,154 @@ class AppItem {
   }
 }
 
-// دالة جلب السكربتات
-Future<List<ScriptItem>> fetchScripts() async {
-  final response =
-      await http.get(Uri.parse('https://scrptaty.com/posts/get_simple.php'));
+// ─── مفاتيح الكاش ───
+const String _cachedScriptsKey = 'cached_scripts_v1';
+const String _cachedAppsKey = 'cached_apps_v1';
 
-  if (response.statusCode != 200) {
-    throw Exception('Failed to load scripts: ${response.statusCode}');
-  }
-
-  final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-
-  final List<dynamic> rawScripts;
-  if (decoded is List) {
-    rawScripts = decoded;
-  } else if (decoded is Map<String, dynamic>) {
-    final dynamic nestedScripts =
-        decoded['scripts'] ?? decoded['data'] ?? decoded['value'];
-    if (nestedScripts is List) {
-      rawScripts = nestedScripts;
-    } else {
-      rawScripts = [decoded];
-    }
-  } else {
-    throw Exception('Unexpected scripts response');
-  }
-
-  return rawScripts
-      .whereType<Map>()
-      .map((item) => ScriptItem.fromJson(Map<String, dynamic>.from(item)))
-      .where((script) =>
-          script.title.isNotEmpty || script.imageUrl.isNotEmpty)
-      .toList();
+// حفظ السكربتات في الكاش
+Future<void> _saveScriptsCache(List<ScriptItem> scripts) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _cachedScriptsKey,
+      jsonEncode(scripts.map((s) => s.toJson()).toList()),
+    );
+  } catch (_) {}
 }
 
-// دالة جلب التطبيقات
-Future<List<AppItem>> fetchApps() async {
-  final response =
-      await http.get(Uri.parse('https://scrptaty.com/posts/get_files.php'));
-
-  if (response.statusCode != 200) {
-    throw Exception('Failed to load apps: ${response.statusCode}');
+// قراءة السكربتات من الكاش
+Future<List<ScriptItem>> _loadScriptsCache() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_cachedScriptsKey);
+    if (saved == null || saved.isEmpty) return [];
+    final decoded = jsonDecode(saved);
+    if (decoded is! List) return [];
+    return decoded
+        .whereType<Map>()
+        .map((item) => ScriptItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  } catch (_) {
+    return [];
   }
+}
 
-  final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+// حفظ التطبيقات في الكاش
+Future<void> _saveAppsCache(List<AppItem> apps) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _cachedAppsKey,
+      jsonEncode(apps.map((a) => a.toJson()).toList()),
+    );
+  } catch (_) {}
+}
 
-  final List<dynamic> rawApps;
-  if (decoded is List) {
-    rawApps = decoded;
-  } else if (decoded is Map<String, dynamic>) {
-    final dynamic nestedApps =
-        decoded['apps'] ?? decoded['data'] ?? decoded['value'];
-    if (nestedApps is List) {
-      rawApps = nestedApps;
-    } else {
-      rawApps = [decoded];
+// قراءة التطبيقات من الكاش
+Future<List<AppItem>> _loadAppsCache() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_cachedAppsKey);
+    if (saved == null || saved.isEmpty) return [];
+    final decoded = jsonDecode(saved);
+    if (decoded is! List) return [];
+    return decoded
+        .whereType<Map>()
+        .map((item) => AppItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  } catch (_) {
+    return [];
+  }
+}
+
+// دالة جلب السكربتات مع دعم الوضع غير المتصل
+Future<List<ScriptItem>> fetchScripts() async {
+  try {
+    final response = await http
+        .get(Uri.parse('https://scrptaty.com/posts/get_simple.php'))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load scripts: ${response.statusCode}');
     }
-  } else {
-    throw Exception('Unexpected apps response');
-  }
 
-  return rawApps
-      .whereType<Map>()
-      .map((item) => AppItem.fromJson(Map<String, dynamic>.from(item)))
-      .where((app) => app.title.isNotEmpty || app.imageUrl.isNotEmpty)
-      .toList();
+    final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+    final List<dynamic> rawScripts;
+    if (decoded is List) {
+      rawScripts = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      final dynamic nestedScripts =
+          decoded['scripts'] ?? decoded['data'] ?? decoded['value'];
+      if (nestedScripts is List) {
+        rawScripts = nestedScripts;
+      } else {
+        rawScripts = [decoded];
+      }
+    } else {
+      throw Exception('Unexpected scripts response');
+    }
+
+    final scripts = rawScripts
+        .whereType<Map>()
+        .map((item) => ScriptItem.fromJson(Map<String, dynamic>.from(item)))
+        .where((script) => script.title.isNotEmpty || script.imageUrl.isNotEmpty)
+        .toList();
+
+    // حفظ في الكاش عند النجاح
+    _saveScriptsCache(scripts);
+    return scripts;
+  } catch (_) {
+    // عند فشل الاتصال، نعيد الكاش المحفوظ
+    final cached = await _loadScriptsCache();
+    if (cached.isNotEmpty) return cached;
+    rethrow;
+  }
+}
+
+// دالة جلب التطبيقات مع دعم الوضع غير المتصل
+Future<List<AppItem>> fetchApps() async {
+  try {
+    final response = await http
+        .get(Uri.parse('https://scrptaty.com/posts/get_files.php'))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load apps: ${response.statusCode}');
+    }
+
+    final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+    final List<dynamic> rawApps;
+    if (decoded is List) {
+      rawApps = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      final dynamic nestedApps =
+          decoded['apps'] ?? decoded['data'] ?? decoded['value'];
+      if (nestedApps is List) {
+        rawApps = nestedApps;
+      } else {
+        rawApps = [decoded];
+      }
+    } else {
+      throw Exception('Unexpected apps response');
+    }
+
+    final apps = rawApps
+        .whereType<Map>()
+        .map((item) => AppItem.fromJson(Map<String, dynamic>.from(item)))
+        .where((app) => app.title.isNotEmpty || app.imageUrl.isNotEmpty)
+        .toList();
+
+    // حفظ في الكاش عند النجاح
+    _saveAppsCache(apps);
+    return apps;
+  } catch (_) {
+    // عند فشل الاتصال، نعيد الكاش المحفوظ
+    final cached = await _loadAppsCache();
+    if (cached.isNotEmpty) return cached;
+    rethrow;
+  }
 }
 
 // دالة تحميل الملف
@@ -3806,11 +3904,13 @@ class _ScriptsPageState extends State<ScriptsPage>
           );
         }
 
-        if (snapshot.hasError) {
+        final hasError = snapshot.hasError;
+        final apps = snapshot.data ?? [];
+
+        if (hasError && apps.isEmpty) {
           return _buildErrorMessage('تعذر تحميل التطبيقات');
         }
 
-        final apps = snapshot.data ?? [];
         if (apps.isEmpty) {
           return _buildEmptyMessage('لا توجد تطبيقات حالياً');
         }
@@ -3841,6 +3941,9 @@ class _ScriptsPageState extends State<ScriptsPage>
 
         return Column(
           children: [
+            // بانر الوضع غير المتصل
+            if (hasError) _buildOfflineBanner(isDark),
+
             ...visibleApps.asMap().entries.map((entry) {
               final i = entry.key;
               final app = entry.value;
@@ -3867,6 +3970,34 @@ class _ScriptsPageState extends State<ScriptsPage>
           ],
         );
       },
+    );
+  }
+
+  Widget _buildOfflineBanner(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A1A00) : const Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: Colors.orange, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'لا يوجد اتصال - يتم عرض آخر بيانات محفوظة',
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 13,
+                color: isDark ? Colors.orange[300] : Colors.orange[800],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -5338,7 +5469,9 @@ Future<void> _handleGoogleSignIn() async {
               ),
             ),
             body: SingleChildScrollView(
-              physics: const ClampingScrollPhysics(),
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5607,6 +5740,138 @@ class _TrianglePainter extends CustomPainter {
 }
 
 // ============================================================
+// انتقال مخصص: يفتح من اليسار لليمين
+// ============================================================
+class _LeftToRightPageRoute extends PageRouteBuilder {
+  final Widget page;
+
+  _LeftToRightPageRoute({required this.page})
+      : super(
+          opaque: false, // ضروري: يجعل الصفحة الخلفية مرئية أثناء السحب
+          transitionDuration: const Duration(milliseconds: 320),
+          reverseTransitionDuration: const Duration(milliseconds: 280),
+          pageBuilder: (context, animation, secondaryAnimation) => page,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            // الصفحة الجديدة تدخل من اليسار (begin -1 → end 0)
+            final slideIn = Tween<Offset>(
+              begin: const Offset(-1.0, 0.0),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+
+            // الصفحة الخلفية تتحرك لليمين (0 → 0.3) — تعمل تلقائياً عند الإغلاق أيضاً
+            final slideOut = Tween<Offset>(
+              begin: Offset.zero,
+              end: const Offset(0.3, 0.0),
+            ).animate(CurvedAnimation(parent: secondaryAnimation, curve: Curves.easeInCubic));
+
+            return Stack(
+              children: [
+                // الصفحة الخلفية تتحرك لليمين
+                SlideTransition(
+                  position: slideOut,
+                  child: const SizedBox.expand(),
+                ),
+                // الصفحة الجديدة تدخل من اليسار
+                SlideTransition(
+                  position: slideIn,
+                  child: child,
+                ),
+              ],
+            );
+          },
+        );
+}
+
+// ============================================================
+//  صفحة الكرت مع دعم السحب من اليمين لليسار للإغلاق
+// ============================================================
+class _SwipeableLeftToRightPage extends StatefulWidget {
+  final Widget child;
+  const _SwipeableLeftToRightPage({required this.child});
+
+  @override
+  State<_SwipeableLeftToRightPage> createState() => _SwipeableLeftToRightPageState();
+}
+
+class _SwipeableLeftToRightPageState extends State<_SwipeableLeftToRightPage>
+    with SingleTickerProviderStateMixin {
+  // السحب لليسار يُغلق الصفحة مع تحريك الخلفية معها
+  // الحل: تحريك الـ route controller مباشرة (animation 1→0 = إغلاق)
+  double _dragOffset = 0.0;
+  bool _isGesturing = false;
+  late AnimationController _snapController;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+  }
+
+  @override
+  void dispose() {
+    _snapController.dispose();
+    super.dispose();
+  }
+
+  void _handleDragStart(DragStartDetails details) {
+    _isGesturing = true;
+    _dragOffset = 0.0;
+    _snapController.stop();
+    // نُبلغ الـ Navigator ببدء gesture يدوي
+    Navigator.of(context).didStartUserGesture();
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    if (!_isGesturing) return;
+    final screenWidth = MediaQuery.of(context).size.width;
+    // dx سالب = سحب لليسار = إغلاق (نقلل قيمة الـ animation)
+    // dx موجب = سحب لليمين = فتح (نزيد قيمة الـ animation)
+    final route = ModalRoute.of(context);
+    if (route?.controller == null) return;
+
+    final delta = -details.delta.dx / screenWidth; // سالب للسحب لليسار
+    final newValue = (route!.controller!.value - delta).clamp(0.0, 1.0);
+    route.controller!.value = newValue;
+    setState(() => _dragOffset = details.delta.dx);
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    if (!_isGesturing) return;
+    _isGesturing = false;
+    final route = ModalRoute.of(context);
+    final velocity = details.primaryVelocity ?? 0;
+    final currentValue = route?.controller?.value ?? 1.0;
+
+    // إغلاق: animation أقل من 0.6 أو سرعة عالية لليسار
+    if (currentValue < 0.5 || velocity < -800) {
+      Navigator.of(context).pop();
+    } else {
+      // رجوع للوضع الطبيعي (فتح)
+      route?.controller?.animateTo(
+        1.0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
+    }
+    Navigator.of(context).didStopUserGesture();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _handleDragStart,
+      onHorizontalDragUpdate: _handleDragUpdate,
+      onHorizontalDragEnd: _handleDragEnd,
+      child: widget.child,
+    );
+  }
+}
+
+// ============================================================
 // 🔥 الكرت مع انتقال من اليسار لليمين
 // ============================================================
 class _HoverCard extends StatefulWidget {
@@ -5642,7 +5907,9 @@ class _HoverCardState extends State<_HoverCard> {
         onTap: () {
           Navigator.push(
             context,
-            CupertinoPageRoute(builder: (_) => widget.page),
+            _LeftToRightPageRoute(
+              page: _SwipeableLeftToRightPage(child: widget.page),
+            ),
           );
         },
         child: AnimatedContainer(
@@ -5756,12 +6023,14 @@ class _HostingPageState extends State<HostingPage> {
                 );
               }
 
-              if (snapshot.hasError) {
+              final hasError = snapshot.hasError;
+              final scripts = snapshot.data ?? [];
+
+              if (hasError && scripts.isEmpty) {
                 return _buildPageMessage(
                     'تعذر تحميل السكربتات حالياً', isDark, Icons.error_outline);
               }
 
-              final scripts = snapshot.data ?? [];
               if (scripts.isEmpty) {
                 return _buildPageMessage('لا توجد سكربتات حالياً', isDark, Icons.inbox_outlined);
               }
@@ -5769,9 +6038,37 @@ class _HostingPageState extends State<HostingPage> {
               return ListView.separated(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemCount: scripts.length,
+                itemCount: scripts.length + (hasError ? 1 : 0),
                 itemBuilder: (context, index) {
-                  return _buildScriptCard(scripts[index], isDark);
+                  if (hasError && index == 0) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF2A1A00) : const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wifi_off_rounded, color: Colors.orange, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'لا يوجد اتصال - يتم عرض آخر بيانات محفوظة',
+                              style: TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontSize: 13,
+                                color: isDark ? Colors.orange[300] : Colors.orange[800],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final scriptIndex = hasError ? index - 1 : index;
+                  return _buildScriptCard(scripts[scriptIndex], isDark);
                 },
               );
             },
@@ -6055,11 +6352,13 @@ class _AppsPageState extends State<AppsPage> {
                 );
               }
 
-              if (snapshot.hasError) {
+              final hasError = snapshot.hasError;
+              final apps = snapshot.data ?? [];
+
+              if (hasError && apps.isEmpty) {
                 return _buildPageMessage('تعذر تحميل التطبيقات حالياً', isDark, Icons.error_outline);
               }
 
-              final apps = snapshot.data ?? [];
               if (apps.isEmpty) {
                 return _buildPageMessage('لا توجد تطبيقات حالياً', isDark, Icons.inbox_outlined);
               }
@@ -6067,9 +6366,37 @@ class _AppsPageState extends State<AppsPage> {
               return ListView.separated(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemCount: apps.length,
+                itemCount: apps.length + (hasError ? 1 : 0),
                 itemBuilder: (context, index) {
-                  return _buildAppListCard(apps[index], isDark);
+                  if (hasError && index == 0) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF2A1A00) : const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wifi_off_rounded, color: Colors.orange, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'لا يوجد اتصال - يتم عرض آخر بيانات محفوظة',
+                              style: TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontSize: 13,
+                                color: isDark ? Colors.orange[300] : Colors.orange[800],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final appIndex = hasError ? index - 1 : index;
+                  return _buildAppListCard(apps[appIndex], isDark);
                 },
               );
             },
