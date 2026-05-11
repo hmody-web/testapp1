@@ -6971,16 +6971,26 @@ class _FullScreenEditorPage extends StatefulWidget {
 class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
   late TextEditingController _ctrl;
   late FocusNode _focusNode;
+  late ScrollController _scrollCtrl;
 
   // وضع المعاينة
   bool _previewMode = false;
+
+  // حالة نافذة الرابط المدمجة
+  bool _showLinkPanel = false;
+  final TextEditingController _linkLabelCtrl = TextEditingController();
+  final TextEditingController _linkUrlCtrl = TextEditingController();
+  TextSelection? _savedSelection;
+
+  // محاذاة النص الحالية
+  TextAlign _textAlign = TextAlign.right;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialText);
     _focusNode = FocusNode();
-    // استمع لتغيرات النص لإعادة البناء
+    _scrollCtrl = ScrollController();
     _ctrl.addListener(() { if (mounted) setState(() {}); });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -6991,6 +7001,9 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
   void dispose() {
     _ctrl.dispose();
     _focusNode.dispose();
+    _scrollCtrl.dispose();
+    _linkLabelCtrl.dispose();
+    _linkUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -7015,7 +7028,6 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     final text = _ctrl.text;
     final pos = sel.isValid ? sel.start : text.length;
     final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-    // إذا كان البادئة موجودة بالفعل، أزلها (toggle)
     if (text.substring(lineStart).startsWith(prefix)) {
       final newText = text.replaceRange(lineStart, lineStart + prefix.length, '');
       _ctrl.value = TextEditingValue(
@@ -7035,15 +7047,10 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     final sel = _ctrl.selection;
     final text = _ctrl.text;
     final pos = sel.isValid ? sel.start : text.length;
-
-    // إيجاد بداية السطر الحالي
     final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
     final currentLine = text.substring(lineStart, pos);
-
-    // هل السطر الحالي بالفعل عنصر مرقم؟
     final currentMatch = RegExp(r'^(\d+)\. ').firstMatch(currentLine);
     if (currentMatch != null) {
-      // toggle: إزالة البادئة
       final prefix = currentMatch.group(0)!;
       final newText = text.replaceRange(lineStart, lineStart + prefix.length, '');
       _ctrl.value = TextEditingValue(
@@ -7052,11 +7059,8 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
       );
       return;
     }
-
-    // البحث عن آخر رقم في القائمة المرقمة قبل هذه النقطة
     int nextNumber = 1;
     if (lineStart > 0) {
-      // البحث في السطر السابق
       final prevLineEnd = lineStart - 1;
       final prevLineStart = text.lastIndexOf('\n', prevLineEnd - 1) + 1;
       final prevLine = text.substring(prevLineStart, prevLineEnd);
@@ -7065,69 +7069,11 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
         nextNumber = int.parse(prevMatch.group(1)!) + 1;
       }
     }
-
     final prefix = '$nextNumber. ';
     final newText = text.replaceRange(lineStart, lineStart, prefix);
     _ctrl.value = TextEditingValue(
       text: newText,
       selection: TextSelection.collapsed(offset: pos + prefix.length),
-    );
-  }
-
-  // معالج Enter لإضافة رقم تلقائي في القائمة المرقمة
-  void _handleNewLine() {
-    final sel = _ctrl.selection;
-    if (!sel.isValid) return;
-    final text = _ctrl.text;
-    final pos = sel.start;
-    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-    final currentLine = text.substring(lineStart, pos);
-    final numMatch = RegExp(r'^(\d+)\. (.*)$').firstMatch(currentLine);
-    if (numMatch != null) {
-      final lineContent = numMatch.group(2) ?? '';
-      if (lineContent.isEmpty) {
-        // سطر فارغ مرقم → إنهاء القائمة
-        final newText = text.replaceRange(lineStart, pos, '');
-        _ctrl.value = TextEditingValue(
-          text: newText,
-          selection: TextSelection.collapsed(offset: lineStart),
-        );
-      } else {
-        final nextNum = int.parse(numMatch.group(1)!) + 1;
-        final insert = '\n$nextNum. ';
-        final newText = text.replaceRange(pos, sel.end, insert);
-        _ctrl.value = TextEditingValue(
-          text: newText,
-          selection: TextSelection.collapsed(offset: pos + insert.length),
-        );
-      }
-      return;
-    }
-    // سطر نقطي → إضافة • تلقائياً
-    if (RegExp(r'^[•] ').hasMatch(currentLine)) {
-      final lineContent = currentLine.substring(2);
-      if (lineContent.isEmpty) {
-        final newText = text.replaceRange(lineStart, pos, '');
-        _ctrl.value = TextEditingValue(
-          text: newText,
-          selection: TextSelection.collapsed(offset: lineStart),
-        );
-      } else {
-        const insert = '\n• ';
-        final newText = text.replaceRange(pos, sel.end, insert);
-        _ctrl.value = TextEditingValue(
-          text: newText,
-          selection: TextSelection.collapsed(offset: pos + insert.length),
-        );
-      }
-      return;
-    }
-    // سطر عادي
-    final insert = '\n';
-    final newText = text.replaceRange(pos, sel.end, insert);
-    _ctrl.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: pos + 1),
     );
   }
 
@@ -7142,97 +7088,67 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     );
   }
 
-  void _showLinkDialog() {
-    // حفظ الـ selection قبل فتح الحوار
-    final savedSel = _ctrl.selection;
-    final savedText = _ctrl.text;
-    final selectedText = savedSel.isValid ? savedSel.textInside(savedText) : '';
-    final labelCtrl = TextEditingController(text: selectedText);
-    final urlCtrl = TextEditingController();
+  // ── فتح لوحة الرابط المدمجة (بدون Dialog) ──
+  void _openLinkPanel() {
+    final sel = _ctrl.selection;
+    final selectedText = sel.isValid ? sel.textInside(_ctrl.text) : '';
+    setState(() {
+      _savedSelection = sel.isValid ? sel : null;
+      _linkLabelCtrl.text = selectedText;
+      _linkUrlCtrl.text = '';
+      _showLinkPanel = true;
+    });
+    _focusNode.unfocus();
+  }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: widget.isDark ? const Color(0xFF1A1A1A) : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('إضافة رابط', style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                autofocus: true,
-                controller: labelCtrl,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black),
-                decoration: InputDecoration(
-                  labelText: 'نص الرابط',
-                  labelStyle: TextStyle(fontFamily: 'Tajawal', color: Colors.red.withOpacity(0.8)),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.red.withOpacity(0.3))),
-                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: urlCtrl,
-                textDirection: TextDirection.ltr,
-                style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black),
-                decoration: InputDecoration(
-                  labelText: 'رابط URL',
-                  hintText: 'https://',
-                  labelStyle: TextStyle(fontFamily: 'Tajawal', color: Colors.red.withOpacity(0.8)),
-                  hintStyle: TextStyle(color: widget.isDark ? Colors.white30 : Colors.black26),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.red.withOpacity(0.3))),
-                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                labelCtrl.dispose();
-                urlCtrl.dispose();
-                Navigator.pop(dialogContext);
-              },
-              child: Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white54 : Colors.black45)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                final url = urlCtrl.text.trim();
-                final label = labelCtrl.text.trim();
-                Navigator.pop(dialogContext);
-                if (url.isNotEmpty) {
-                  final finalLabel = label.isNotEmpty ? label : url;
-                  final finalUrl = url.startsWith('http') ? url : 'https://$url';
-                  final linkText = '[$finalLabel]($finalUrl)';
-                  final start = savedSel.isValid ? savedSel.start : savedText.length;
-                  final end = savedSel.isValid ? savedSel.end : savedText.length;
-                  final newText = savedText.replaceRange(start, end, linkText);
-                  if (mounted) {
-                    setState(() {
-                      _ctrl.value = TextEditingValue(
-                        text: newText,
-                        selection: TextSelection.collapsed(offset: start + linkText.length),
-                      );
-                    });
-                  }
-                }
-                labelCtrl.dispose();
-                urlCtrl.dispose();
-              },
-              child: const Text('إضافة', style: TextStyle(fontFamily: 'Tajawal', color: Colors.white)),
-            ),
-          ],
-        ),
-      ),
-    );
+  void _closeLinkPanel() {
+    setState(() {
+      _showLinkPanel = false;
+      _linkLabelCtrl.text = '';
+      _linkUrlCtrl.text = '';
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
+
+  void _confirmLink() {
+    final url = _linkUrlCtrl.text.trim();
+    final label = _linkLabelCtrl.text.trim();
+    if (url.isNotEmpty) {
+      final finalLabel = label.isNotEmpty ? label : url;
+      final finalUrl = url.startsWith('http') ? url : 'https://$url';
+      final linkText = '[$finalLabel]($finalUrl)';
+      final currentText = _ctrl.text;
+      final sel = _savedSelection;
+      final start = (sel != null && sel.isValid) ? sel.start : currentText.length;
+      final end = (sel != null && sel.isValid) ? sel.end : currentText.length;
+      final newText = currentText.replaceRange(start, end, linkText);
+      _ctrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: start + linkText.length),
+      );
+    }
+    _closeLinkPanel();
+  }
+
+  // ── تغيير المحاذاة ──
+  void _cycleAlignment() {
+    setState(() {
+      if (_textAlign == TextAlign.right) {
+        _textAlign = TextAlign.center;
+      } else if (_textAlign == TextAlign.center) {
+        _textAlign = TextAlign.left;
+      } else {
+        _textAlign = TextAlign.right;
+      }
+    });
+  }
+
+  IconData get _alignIcon {
+    if (_textAlign == TextAlign.right) return Icons.format_align_right;
+    if (_textAlign == TextAlign.center) return Icons.format_align_center;
+    return Icons.format_align_left;
   }
 
   Widget _toolbarBtn({required IconData icon, required String tooltip, required VoidCallback onTap, bool active = false}) {
@@ -7273,7 +7189,6 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
       color: textColor,
     );
 
-    // تحقق من أن التحديد الحالي يغطي نصاً مُنسَّقاً
     final sel = _ctrl.selection;
     final currentText = _ctrl.text;
     final selectedText = sel.isValid ? sel.textInside(currentText) : '';
@@ -7300,7 +7215,6 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                 ),
                 child: Row(
                   children: [
-                    // زر حفظ
                     GestureDetector(
                       onTap: () => Navigator.pop(context, _ctrl.text),
                       child: Container(
@@ -7324,7 +7238,6 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    // زر تبديل المعاينة
                     GestureDetector(
                       onTap: () => setState(() => _previewMode = !_previewMode),
                       child: AnimatedContainer(
@@ -7345,7 +7258,6 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    // زر إغلاق
                     GestureDetector(
                       onTap: () => Navigator.pop(context, null),
                       child: Container(
@@ -7361,7 +7273,7 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                 ),
               ),
 
-              // ── شريط الأدوات (يُخفى في وضع المعاينة) ──
+              // ── شريط الأدوات ──
               if (!_previewMode)
                 Container(
                   height: 50,
@@ -7371,70 +7283,126 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     child: Row(
                       children: [
-                        _toolbarBtn(
-                          icon: Icons.format_bold,
-                          tooltip: 'عريض',
-                          active: isBold,
-                          onTap: () => _wrapSelection('**', '**'),
-                        ),
-                        _toolbarBtn(
-                          icon: Icons.format_italic,
-                          tooltip: 'مائل',
-                          active: isItalic,
-                          onTap: () => _wrapSelection('*', '*'),
-                        ),
-                        _toolbarBtn(
-                          icon: Icons.format_underline,
-                          tooltip: 'تحته خط',
-                          active: isUnderline,
-                          onTap: () => _wrapSelection('<u>', '</u>'),
-                        ),
+                        _toolbarBtn(icon: Icons.format_bold, tooltip: 'عريض', active: isBold, onTap: () => _wrapSelection('**', '**')),
+                        _toolbarBtn(icon: Icons.format_italic, tooltip: 'مائل', active: isItalic, onTap: () => _wrapSelection('*', '*')),
+                        _toolbarBtn(icon: Icons.format_underline, tooltip: 'تحته خط', active: isUnderline, onTap: () => _wrapSelection('<u>', '</u>')),
                         Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
-                        _toolbarBtn(
-                          icon: Icons.title,
-                          tooltip: 'عنوان كبير',
-                          onTap: () => _insertLinePrefix('## '),
-                        ),
-                        _toolbarBtn(
-                          icon: Icons.format_list_bulleted,
-                          tooltip: 'قائمة نقطية',
-                          onTap: () => _insertLinePrefix('• '),
-                        ),
-                        _toolbarBtn(
-                          icon: Icons.format_list_numbered,
-                          tooltip: 'قائمة مرقمة',
-                          onTap: _insertNumberedListItem,
-                        ),
-                        _toolbarBtn(
-                          icon: Icons.format_quote,
-                          tooltip: 'اقتباس',
-                          onTap: () => _insertLinePrefix('> '),
-                        ),
-                        _toolbarBtn(
-                          icon: Icons.horizontal_rule,
-                          tooltip: 'فاصل أفقي',
-                          onTap: _insertHorizontalRule,
-                        ),
+                        _toolbarBtn(icon: Icons.title, tooltip: 'عنوان كبير', onTap: () => _insertLinePrefix('## ')),
+                        _toolbarBtn(icon: Icons.format_list_bulleted, tooltip: 'قائمة نقطية', onTap: () => _insertLinePrefix('• ')),
+                        _toolbarBtn(icon: Icons.format_list_numbered, tooltip: 'قائمة مرقمة', onTap: _insertNumberedListItem),
+                        _toolbarBtn(icon: Icons.format_quote, tooltip: 'اقتباس', onTap: () => _insertLinePrefix('> ')),
+                        _toolbarBtn(icon: Icons.horizontal_rule, tooltip: 'فاصل أفقي', onTap: _insertHorizontalRule),
                         Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
                         _toolbarBtn(
                           icon: Icons.link,
                           tooltip: 'رابط',
-                          onTap: _showLinkDialog,
+                          active: _showLinkPanel,
+                          onTap: _showLinkPanel ? _closeLinkPanel : _openLinkPanel,
                         ),
-                        _toolbarBtn(
-                          icon: Icons.code,
-                          tooltip: 'كود',
-                          onTap: () => _wrapSelection('`', '`'),
-                        ),
+                        _toolbarBtn(icon: Icons.code, tooltip: 'كود', onTap: () => _wrapSelection('`', '`')),
+                        Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
+                        _toolbarBtn(icon: _alignIcon, tooltip: 'محاذاة النص', active: _textAlign != TextAlign.right, onTap: _cycleAlignment),
                       ],
                     ),
+                  ),
+                ),
+
+              // ── لوحة إدخال الرابط المدمجة ──
+              if (!_previewMode && _showLinkPanel)
+                Container(
+                  color: widget.isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF0F0F0),
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.link, color: Colors.red, size: 16),
+                          const SizedBox(width: 6),
+                          Text('إضافة رابط', style: TextStyle(fontFamily: 'Tajawal', fontSize: 13, fontWeight: FontWeight.bold, color: widget.isDark ? Colors.white70 : Colors.black54)),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: _closeLinkPanel,
+                            child: Icon(Icons.close_rounded, size: 18, color: widget.isDark ? Colors.white38 : Colors.black38),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: widget.isDark ? const Color(0xFF111111) : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.red.withOpacity(0.25)),
+                              ),
+                              child: TextField(
+                                controller: _linkLabelCtrl,
+                                textDirection: TextDirection.rtl,
+                                textAlignVertical: TextAlignVertical.center,
+                                style: TextStyle(fontFamily: 'Tajawal', fontSize: 13, color: widget.isDark ? Colors.white : Colors.black),
+                                decoration: InputDecoration(
+                                  hintText: 'نص الرابط',
+                                  hintStyle: TextStyle(fontFamily: 'Tajawal', fontSize: 13, color: widget.isDark ? Colors.white30 : Colors.black38),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: widget.isDark ? const Color(0xFF111111) : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.red.withOpacity(0.25)),
+                              ),
+                              child: TextField(
+                                controller: _linkUrlCtrl,
+                                textDirection: TextDirection.ltr,
+                                textAlignVertical: TextAlignVertical.center,
+                                style: TextStyle(fontFamily: 'Tajawal', fontSize: 13, color: widget.isDark ? Colors.white : Colors.black),
+                                decoration: InputDecoration(
+                                  hintText: 'https://...',
+                                  hintStyle: TextStyle(fontFamily: 'Tajawal', fontSize: 13, color: widget.isDark ? Colors.white30 : Colors.black38),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  isDense: true,
+                                ),
+                                onSubmitted: (_) => _confirmLink(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _confirmLink,
+                            child: Container(
+                              height: 40,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(colors: [Color(0xFF7B1A14), Color(0xFFE53935)]),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Center(
+                                child: Text('إضافة', style: TextStyle(fontFamily: 'Tajawal', fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
 
               // ── منطقة المحرر أو المعاينة ──
               Expanded(
                 child: _previewMode
-                    // ── وضع المعاينة: Html widget ──
                     ? SingleChildScrollView(
                         padding: const EdgeInsets.all(20),
                         child: Align(
@@ -7483,27 +7451,31 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                                 ),
                         ),
                       )
-                    // ── وضع التحرير: TextField مباشر مع Scrollbar ──
+                    // ── وضع التحرير: TextField مع Scrollbar وscrollController مشترك ──
                     : Scrollbar(
+                        controller: _scrollCtrl,
                         thumbVisibility: true,
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                          controller: _scrollCtrl,
+                          padding: EdgeInsets.fromLTRB(
+                            16, 12, 16,
+                            MediaQuery.of(context).viewInsets.bottom + 80,
+                          ),
                           child: Directionality(
                             textDirection: TextDirection.rtl,
                             child: TextField(
                               controller: _ctrl,
                               focusNode: _focusNode,
                               maxLines: null,
+                              keyboardType: TextInputType.multiline,
                               textDirection: TextDirection.rtl,
-                              textAlign: TextAlign.right,
+                              textAlign: _textAlign,
                               textAlignVertical: TextAlignVertical.top,
                               style: baseStyle,
                               cursorColor: Colors.red,
                               cursorWidth: 2,
                               decoration: InputDecoration(
-                                hintText: _ctrl.text.isEmpty
-                                    ? 'اكتب وصف المنشور هنا...'
-                                    : null,
+                                hintText: _ctrl.text.isEmpty ? 'اكتب وصف المنشور هنا...' : null,
                                 hintStyle: TextStyle(
                                   fontFamily: 'Tajawal',
                                   fontSize: 15,
@@ -7513,6 +7485,18 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.zero,
                               ),
+                              onChanged: (_) {
+                                // تمرير تلقائي للأسفل عند الكتابة
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (_scrollCtrl.hasClients) {
+                                    _scrollCtrl.animateTo(
+                                      _scrollCtrl.position.maxScrollExtent,
+                                      duration: const Duration(milliseconds: 100),
+                                      curve: Curves.easeOut,
+                                    );
+                                  }
+                                });
+                              },
                             ),
                           ),
                         ),
@@ -7545,7 +7529,10 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                       ),
                     ),
                     const Spacer(),
-                    if (!_previewMode)
+                    if (!_previewMode) ...[
+                      // مؤشر المحاذاة الحالية
+                      Icon(_alignIcon, size: 13, color: Colors.red.withOpacity(0.6)),
+                      const SizedBox(width: 4),
                       GestureDetector(
                         onTap: () => setState(() => _previewMode = true),
                         child: Text(
@@ -7557,6 +7544,7 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                           ),
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
