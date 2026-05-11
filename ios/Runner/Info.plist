@@ -110,5 +110,9 @@
 <true/>
 <key>LSSupportsOpeningDocumentsInPlace</key>
 <true/>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>نحتاج الوصول للصور لرفعها</string>
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>نحتاج الوصول لحفظ الصور</string>
 </dict>
 </plist>
