@@ -5053,34 +5053,56 @@ Future<void> _handleGoogleSignIn() async {
                   _showStarRain = true;
                 });
               },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.red.shade700,
-                      Colors.red.shade400,
+              child: Builder(builder: (context) {
+                final email = _currentUser?.email ?? '';
+                final Color badgeColor1;
+                final Color badgeColor2;
+                final String badgeText;
+                final IconData badgeIcon;
+
+                if (email == 'hmode.qq@gmail.com') {
+                  badgeColor1 = const Color(0xFF1B5E20);
+                  badgeColor2 = const Color(0xFF4CAF50);
+                  badgeText = 'المالك الرسمي لـ سكربتاتي';
+                  badgeIcon = Icons.verified_rounded;
+                } else if (email == 'hmode.qu@gmail.com') {
+                  badgeColor1 = const Color(0xFF0D47A1);
+                  badgeColor2 = const Color(0xFF42A5F5);
+                  badgeText = 'المشرف لتطبيق سكربتاتي';
+                  badgeIcon = Icons.admin_panel_settings_rounded;
+                } else {
+                  badgeColor1 = Colors.red.shade700;
+                  badgeColor2 = Colors.red.shade400;
+                  badgeText = 'عضو مميز في سكربتاتي';
+                  badgeIcon = Icons.star_rounded;
+                }
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [badgeColor1, badgeColor2],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(badgeIcon, color: Colors.amber, size: 16),
+                      const SizedBox(width: 5),
+                      Text(
+                        badgeText,
+                        style: const TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 13,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.star_rounded, color: Colors.amber, size: 16),
-                    SizedBox(width: 5),
-                    Text(
-                      'عضو مميز في سكربتاتي',
-                      style: TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 13,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                );
+              }),
             ),
             const SizedBox(height: 8),
             // البريد الإلكتروني
@@ -5641,6 +5663,8 @@ Future<void> _handleGoogleSignIn() async {
               const SizedBox(height: 24),
               // Login Card
               _buildLoginCard(),
+              // ── كرت لوحة التحكم (للمشرفين فقط) ──
+              if (_isAdminUser()) _buildAdminPanelCard(),
               _buildCard(
                 child: Row(
                   children: [
@@ -5859,8 +5883,6 @@ Future<void> _handleGoogleSignIn() async {
                   ],
                 ),
               ),
-                    // ── كرت لوحة التحكم (للمشرفين فقط) ──
-                    if (_isAdminUser()) _buildAdminPanelCard(),
                     const SizedBox(height: 90),
             ],
           ),
@@ -6325,11 +6347,11 @@ class _AdminGlassNavBar extends StatelessWidget {
                   final itemWidth = constraints.maxWidth / 2;
                   return Stack(
                     children: [
-                      // المؤشر المتحرك
+                      // المؤشر المتحرك (معكوس - يذهب للجهة المقابلة)
                       AnimatedPositioned(
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
-                        left: selectedTab * itemWidth + 5,
+                        left: (1 - selectedTab) * itemWidth + 5,
                         top: 5,
                         bottom: 5,
                         width: itemWidth - 10,
@@ -6435,99 +6457,7 @@ class _AdminPublishTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          // عنوان القسم
-          Text(
-            'نشر منشور جديد',
-            style: TextStyle(
-              fontFamily: 'Tajawal',
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'أضف محتوى جديداً للتطبيق',
-            style: TextStyle(
-              fontFamily: 'Tajawal',
-              fontSize: 14,
-              color: isDark ? Colors.white54 : Colors.black45,
-            ),
-          ),
-          const SizedBox(height: 24),
-          _AdminInputField(
-            isDark: isDark,
-            label: 'عنوان المنشور',
-            icon: Icons.title_rounded,
-            hint: 'اكتب عنوان المنشور...',
-          ),
-          const SizedBox(height: 16),
-          _AdminInputField(
-            isDark: isDark,
-            label: 'الوصف',
-            icon: Icons.description_rounded,
-            hint: 'اكتب وصف المنشور...',
-            maxLines: 5,
-          ),
-          const SizedBox(height: 16),
-          _AdminInputField(
-            isDark: isDark,
-            label: 'رابط الصورة',
-            icon: Icons.image_rounded,
-            hint: 'https://...',
-          ),
-          const SizedBox(height: 24),
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF7B0000), Colors.red],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.red.withOpacity(0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {},
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.publish_rounded, color: Colors.white),
-                      SizedBox(width: 8),
-                      Text(
-                        'نشر المنشور',
-                        style: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 
@@ -6538,74 +6468,7 @@ class _AdminEditTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          Text(
-            'تعديل المنشورات',
-            style: TextStyle(
-              fontFamily: 'Tajawal',
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'ابحث عن منشور لتعديله أو حذفه',
-            style: TextStyle(
-              fontFamily: 'Tajawal',
-              fontSize: 14,
-              color: isDark ? Colors.white54 : Colors.black45,
-            ),
-          ),
-          const SizedBox(height: 24),
-          // حقل البحث
-          Container(
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.red.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 14),
-                  child: Icon(Icons.search_rounded, color: Colors.red, size: 24),
-                ),
-                Expanded(
-                  child: TextField(
-                    style: TextStyle(
-                      fontFamily: 'Tajawal',
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'ابحث عن منشور...',
-                      hintStyle: TextStyle(
-                        fontFamily: 'Tajawal',
-                        color: isDark ? Colors.white38 : Colors.black38,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          // قائمة منشورات وهمية للعرض
-          ...List.generate(3, (i) => _AdminPostTile(isDark: isDark, index: i)),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 
