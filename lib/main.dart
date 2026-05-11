@@ -1213,7 +1213,27 @@ String htmlToMarkdown(String html) {
 
   String text = html;
 
-  // h1, h2, h3 - استخدام [\s\S] بدل dotAll
+  // div style text-align → تحويلها للصيغة التي يستخدمها المحرر
+  text = text.replaceAllMapped(
+    RegExp(r'<div[^>]*style="[^"]*text-align:\s*(center|left|right)[^"]*"[^>]*>([\s\S]*?)</div>'),
+    (m) {
+      final align = m[1]!.trim();
+      final content = _stripTags(m[2]!).trim();
+      if (align == 'right') return content;
+      return '<div align="$align">$content</div>';
+    },
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'<div align="([^"]+)">([\s\S]*?)</div>'),
+    (m) {
+      final align = m[1]!.trim();
+      final content = _stripTags(m[2]!).trim();
+      if (align == 'right') return content;
+      return '<div align="$align">$content</div>';
+    },
+  );
+
+  // h1, h2, h3
   text = text.replaceAllMapped(RegExp(r'<h1[^>]*>([\s\S]*?)</h1>'), (m) => '# ${_stripTags(m[1]!)}\n');
   text = text.replaceAllMapped(RegExp(r'<h2[^>]*>([\s\S]*?)</h2>'), (m) => '## ${_stripTags(m[1]!)}\n');
   text = text.replaceAllMapped(RegExp(r'<h3[^>]*>([\s\S]*?)</h3>'), (m) => '### ${_stripTags(m[1]!)}\n');
@@ -1310,6 +1330,12 @@ String markdownToHtml(String markdown) {
   html = html.replaceAll('&', '&amp;');
   // لا نعالج < و > لأن المستخدم قد يكون كتب وسوم <u> يدوياً
   // لذا نُعيد & فقط
+
+  // ── 0. معالجة وسوم المحاذاة <div align="..."> التي يضيفها المحرر ──
+  html = html.replaceAllMapped(
+    RegExp(r'<div align="([^"]+)">(.*?)</div>', dotAll: true),
+    (m) => '<div style="text-align:${m[1]}">${m[2]}</div>',
+  );
 
   // ── 2. العناوين ##, ###, # ──
   html = html.replaceAllMapped(
@@ -6969,6 +6995,7 @@ class _FullScreenEditorPage extends StatefulWidget {
 }
 
 class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
+  // المحرر يعمل على markdown داخلياً لكن يعرضه كـ WYSIWYG
   late TextEditingController _ctrl;
   late FocusNode _focusNode;
   late ScrollController _scrollCtrl;
@@ -6982,8 +7009,8 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
   final TextEditingController _linkUrlCtrl = TextEditingController();
   TextSelection? _savedSelection;
 
-  // محاذاة النص الحالية
-  TextAlign _textAlign = TextAlign.right;
+  // محاذاة السطر الحالي (يحفظ per-line باستخدام <div align="...">)
+  TextAlign _currentLineAlign = TextAlign.right;
 
   @override
   void initState() {
@@ -6991,14 +7018,37 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     _ctrl = TextEditingController(text: widget.initialText);
     _focusNode = FocusNode();
     _scrollCtrl = ScrollController();
-    _ctrl.addListener(() { if (mounted) setState(() {}); });
+    _ctrl.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
   }
 
+  void _onTextChanged() {
+    if (mounted) setState(() => _updateCurrentLineAlign());
+  }
+
+  // قراءة محاذاة السطر الحالي من النص
+  void _updateCurrentLineAlign() {
+    final text = _ctrl.text;
+    final sel = _ctrl.selection;
+    if (!sel.isValid || text.isEmpty) return;
+    final pos = sel.start.clamp(0, text.length);
+    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    final lineEnd = text.indexOf('\n', pos);
+    final line = text.substring(lineStart, lineEnd < 0 ? text.length : lineEnd);
+    if (line.contains('<div align="center">') || line.contains('<div style="text-align:center">')) {
+      _currentLineAlign = TextAlign.center;
+    } else if (line.contains('<div align="left">') || line.contains('<div style="text-align:left">')) {
+      _currentLineAlign = TextAlign.left;
+    } else {
+      _currentLineAlign = TextAlign.right;
+    }
+  }
+
   @override
   void dispose() {
+    _ctrl.removeListener(_onTextChanged);
     _ctrl.dispose();
     _focusNode.dispose();
     _scrollCtrl.dispose();
@@ -7007,12 +7057,39 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     super.dispose();
   }
 
-  // ── تطبيق التنسيق على النص المحدد ──
+  // ── تطبيق التنسيق على النص المحدد مع toggle ──
   void _wrapSelection(String before, String after) {
     final sel = _ctrl.selection;
-    if (!sel.isValid) return;
+    if (!sel.isValid || sel.isCollapsed) return;
     final text = _ctrl.text;
     final selected = sel.textInside(text);
+
+    // Toggle: إذا كان التنسيق موجوداً أزله
+    if (text.substring(sel.start >= before.length ? sel.start - before.length : 0)
+        .startsWith(before) || selected.startsWith(before)) {
+      // فحص بسيط: هل يوجد التنسيق حول النص المحدد
+      final startCheck = sel.start >= before.length
+          ? text.substring(sel.start - before.length, sel.start) == before
+          : false;
+      final endCheck = sel.end + after.length <= text.length
+          ? text.substring(sel.end, sel.end + after.length) == after
+          : false;
+      if (startCheck && endCheck) {
+        // إزالة التنسيق
+        final newText = text.replaceRange(sel.end, sel.end + after.length, '')
+            .replaceRange(sel.start - before.length, sel.start, '');
+        _ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection(
+            baseOffset: sel.start - before.length,
+            extentOffset: sel.end - before.length,
+          ),
+        );
+        return;
+      }
+    }
+
+    // إضافة التنسيق
     final newText = text.replaceRange(sel.start, sel.end, '$before$selected$after');
     _ctrl.value = TextEditingValue(
       text: newText,
@@ -7088,10 +7165,19 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     );
   }
 
-  // ── فتح لوحة الرابط المدمجة (بدون Dialog) ──
+  // ── فتح لوحة الرابط المدمجة ──
   void _openLinkPanel() {
     final sel = _ctrl.selection;
-    final selectedText = sel.isValid ? sel.textInside(_ctrl.text) : '';
+    // استخراج النص المحدد مع تجاهل التنسيق
+    String selectedText = '';
+    if (sel.isValid && !sel.isCollapsed) {
+      final raw = sel.textInside(_ctrl.text);
+      // إزالة رموز markdown لعرض النص فقط
+      selectedText = raw
+          .replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1')
+          .replaceAll(RegExp(r'\*([^*]+)\*'), r'$1')
+          .replaceAll(RegExp(r'<u>([^<]+)</u>'), r'$1');
+    }
     setState(() {
       _savedSelection = sel.isValid ? sel : null;
       _linkLabelCtrl.text = selectedText;
@@ -7132,23 +7218,165 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     _closeLinkPanel();
   }
 
-  // ── تغيير المحاذاة ──
+  // ── محاذاة السطر المحدد فقط ──
+  void _applyLineAlignment(TextAlign align) {
+    final sel = _ctrl.selection;
+    final text = _ctrl.text;
+    final pos = sel.isValid ? sel.start : text.length;
+    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    final lineEndIdx = text.indexOf('\n', pos);
+    final lineEnd = lineEndIdx < 0 ? text.length : lineEndIdx;
+    String line = text.substring(lineStart, lineEnd);
+
+    // إزالة أي محاذاة سابقة من السطر
+    line = line
+        .replaceAll(RegExp(r'<div align="[^"]*">'), '')
+        .replaceAll(RegExp(r'</div>'), '')
+        .replaceAll(RegExp(r'<div style="text-align:[^"]*">'), '');
+
+    // إضافة المحاذاة الجديدة (يمين = الافتراضي، لا نضيف له وسم)
+    String newLine;
+    if (align == TextAlign.right) {
+      newLine = line; // الافتراضي
+    } else if (align == TextAlign.center) {
+      newLine = '<div align="center">$line</div>';
+    } else {
+      newLine = '<div align="left">$line</div>';
+    }
+
+    final newText = text.replaceRange(lineStart, lineEnd, newLine);
+    final cursorOffset = (pos - lineStart + (newLine.length - line.length)).clamp(lineStart, lineStart + newLine.length);
+    _ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: lineStart + (pos - lineStart).clamp(0, newLine.length)),
+    );
+    setState(() => _currentLineAlign = align);
+  }
+
   void _cycleAlignment() {
-    setState(() {
-      if (_textAlign == TextAlign.right) {
-        _textAlign = TextAlign.center;
-      } else if (_textAlign == TextAlign.center) {
-        _textAlign = TextAlign.left;
-      } else {
-        _textAlign = TextAlign.right;
-      }
-    });
+    if (_currentLineAlign == TextAlign.right) {
+      _applyLineAlignment(TextAlign.center);
+    } else if (_currentLineAlign == TextAlign.center) {
+      _applyLineAlignment(TextAlign.left);
+    } else {
+      _applyLineAlignment(TextAlign.right);
+    }
   }
 
   IconData get _alignIcon {
-    if (_textAlign == TextAlign.right) return Icons.format_align_right;
-    if (_textAlign == TextAlign.center) return Icons.format_align_center;
+    if (_currentLineAlign == TextAlign.right) return Icons.format_align_right;
+    if (_currentLineAlign == TextAlign.center) return Icons.format_align_center;
     return Icons.format_align_left;
+  }
+
+  // ── بناء TextSpan للعرض WYSIWYG ──
+  // يحوّل markdown إلى TextSpan مباشرة في المحرر
+  TextSpan _buildRichSpan(String text, TextStyle base, Color linkColor) {
+    final spans = <InlineSpan>[];
+    // معالجة سطر بسطر
+    final lines = text.split('\n');
+    for (int i = 0; i < lines.length; i++) {
+      if (i > 0) spans.add(const TextSpan(text: '\n'));
+      final line = lines[i];
+      spans.addAll(_parseLineSpans(line, base, linkColor));
+    }
+    return TextSpan(children: spans);
+  }
+
+  List<InlineSpan> _parseLineSpans(String line, TextStyle base, Color linkColor) {
+    // إزالة وسوم المحاذاة من العرض
+    String displayLine = line
+        .replaceAll(RegExp(r'<div align="[^"]*">'), '')
+        .replaceAll(RegExp(r'</div>'), '')
+        .replaceAll(RegExp(r'<div style="text-align:[^"]*">'), '');
+
+    // عناوين
+    if (displayLine.startsWith('## ')) {
+      return [TextSpan(text: displayLine.substring(3), style: base.copyWith(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red))];
+    }
+    if (displayLine.startsWith('# ')) {
+      return [TextSpan(text: displayLine.substring(2), style: base.copyWith(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.red))];
+    }
+    if (displayLine.startsWith('### ')) {
+      return [TextSpan(text: displayLine.substring(4), style: base.copyWith(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.red))];
+    }
+    // اقتباس
+    if (displayLine.startsWith('> ')) {
+      return [TextSpan(text: '❝ ${displayLine.substring(2)}', style: base.copyWith(fontStyle: FontStyle.italic, color: base.color?.withOpacity(0.6)))];
+    }
+    // خط أفقي
+    if (displayLine.trim() == '---') {
+      return [WidgetSpan(child: Container(height: 1.5, color: Colors.red.withOpacity(0.4), margin: const EdgeInsets.symmetric(vertical: 4)))];
+    }
+    // قائمة نقطية
+    if (displayLine.startsWith('• ')) {
+      final rest = _parseInlineSpans(displayLine.substring(2), base, linkColor);
+      return [TextSpan(text: '• ', style: base.copyWith(color: Colors.red)), ...rest];
+    }
+    // قائمة مرقمة
+    final numMatch = RegExp(r'^(\d+)\. (.*)').firstMatch(displayLine);
+    if (numMatch != null) {
+      final rest = _parseInlineSpans(numMatch.group(2)!, base, linkColor);
+      return [TextSpan(text: '${numMatch.group(1)}. ', style: base.copyWith(color: Colors.red)), ...rest];
+    }
+
+    return _parseInlineSpans(displayLine, base, linkColor);
+  }
+
+  List<InlineSpan> _parseInlineSpans(String text, TextStyle base, Color linkColor) {
+    final spans = <InlineSpan>[];
+    // Regex يجمع كل التنسيقات
+    final pattern = RegExp(
+      r'\*\*\*(.+?)\*\*\*'         // bold+italic
+      r'|\*\*(.+?)\*\*'             // bold
+      r'|\*(.+?)\*'                 // italic
+      r'|<u>(.+?)</u>'              // underline
+      r'|`(.+?)`'                   // code
+      r'|\[([^\]]+)\]\(([^)]+)\)',  // link
+    );
+
+    int lastEnd = 0;
+    for (final m in pattern.allMatches(text)) {
+      if (m.start > lastEnd) {
+        spans.add(TextSpan(text: text.substring(lastEnd, m.start), style: base));
+      }
+      if (m.group(1) != null) {
+        spans.add(TextSpan(text: m.group(1), style: base.copyWith(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)));
+      } else if (m.group(2) != null) {
+        spans.add(TextSpan(text: m.group(2), style: base.copyWith(fontWeight: FontWeight.bold)));
+      } else if (m.group(3) != null) {
+        spans.add(TextSpan(text: m.group(3), style: base.copyWith(fontStyle: FontStyle.italic)));
+      } else if (m.group(4) != null) {
+        spans.add(TextSpan(text: m.group(4), style: base.copyWith(decoration: TextDecoration.underline)));
+      } else if (m.group(5) != null) {
+        spans.add(TextSpan(
+          text: m.group(5),
+          style: base.copyWith(
+            fontFamily: 'monospace',
+            backgroundColor: Colors.red.withOpacity(0.12),
+            color: Colors.red.shade300,
+          ),
+        ));
+      } else if (m.group(6) != null && m.group(7) != null) {
+        // رابط: نعرض النص فقط بلون أحمر ومسطر
+        spans.add(TextSpan(
+          text: m.group(6),
+          style: base.copyWith(color: linkColor, decoration: TextDecoration.underline),
+        ));
+      }
+      lastEnd = m.end;
+    }
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastEnd), style: base));
+    }
+    return spans.isEmpty ? [TextSpan(text: text, style: base)] : spans;
+  }
+
+  // حساب محاذاة السطر الحالي للعرض
+  TextAlign _getLineAlign(String line) {
+    if (line.contains('<div align="center">') || line.contains('<div style="text-align:center">')) return TextAlign.center;
+    if (line.contains('<div align="left">') || line.contains('<div style="text-align:left">')) return TextAlign.left;
+    return TextAlign.right;
   }
 
   Widget _toolbarBtn({required IconData icon, required String tooltip, required VoidCallback onTap, bool active = false}) {
@@ -7177,11 +7405,26 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     );
   }
 
+  // فحص حالة التنسيق على النص المحدد
+  bool _isFormatActive(String before, String after) {
+    final sel = _ctrl.selection;
+    if (!sel.isValid || sel.isCollapsed) return false;
+    final text = _ctrl.text;
+    final startCheck = sel.start >= before.length
+        ? text.substring(sel.start - before.length, sel.start) == before
+        : false;
+    final endCheck = sel.end + after.length <= text.length
+        ? text.substring(sel.end, sel.end + after.length) == after
+        : false;
+    return startCheck && endCheck;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bg = widget.isDark ? const Color(0xFF111111) : Colors.white;
     final surface = widget.isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5);
     final textColor = widget.isDark ? Colors.white : Colors.black87;
+    final linkColor = Colors.red;
     final baseStyle = TextStyle(
       fontFamily: 'Tajawal',
       fontSize: 16,
@@ -7189,14 +7432,9 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
       color: textColor,
     );
 
-    final sel = _ctrl.selection;
-    final currentText = _ctrl.text;
-    final selectedText = sel.isValid ? sel.textInside(currentText) : '';
-    final isBold = selectedText.isNotEmpty &&
-        (currentText.contains('**$selectedText**') || RegExp(r'\*\*[^*]+\*\*').hasMatch(selectedText));
-    final isItalic = selectedText.isNotEmpty &&
-        (!isBold && currentText.contains('*$selectedText*'));
-    final isUnderline = selectedText.isNotEmpty && currentText.contains('<u>$selectedText</u>');
+    final isBold = _isFormatActive('**', '**');
+    final isItalic = _isFormatActive('*', '*');
+    final isUnderline = _isFormatActive('<u>', '</u>');
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -7301,7 +7539,7 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                         ),
                         _toolbarBtn(icon: Icons.code, tooltip: 'كود', onTap: () => _wrapSelection('`', '`')),
                         Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
-                        _toolbarBtn(icon: _alignIcon, tooltip: 'محاذاة النص', active: _textAlign != TextAlign.right, onTap: _cycleAlignment),
+                        _toolbarBtn(icon: _alignIcon, tooltip: 'محاذاة النص', active: _currentLineAlign != TextAlign.right, onTap: _cycleAlignment),
                       ],
                     ),
                   ),
@@ -7447,59 +7685,25 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                                       border: Border(right: BorderSide(color: Colors.red, width: 3)),
                                       padding: HtmlPaddings.only(right: 12),
                                     ),
+                                    'div': Style(
+                                      margin: Margins.zero,
+                                      padding: HtmlPaddings.zero,
+                                      fontFamily: 'Tajawal',
+                                    ),
                                   },
                                 ),
                         ),
                       )
-                    // ── وضع التحرير: TextField مع Scrollbar وscrollController مشترك ──
-                    : Scrollbar(
-                        controller: _scrollCtrl,
-                        thumbVisibility: true,
-                        child: SingleChildScrollView(
-                          controller: _scrollCtrl,
-                          padding: EdgeInsets.fromLTRB(
-                            16, 12, 16,
-                            MediaQuery.of(context).viewInsets.bottom + 80,
-                          ),
-                          child: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: TextField(
-                              controller: _ctrl,
-                              focusNode: _focusNode,
-                              maxLines: null,
-                              keyboardType: TextInputType.multiline,
-                              textDirection: TextDirection.rtl,
-                              textAlign: _textAlign,
-                              textAlignVertical: TextAlignVertical.top,
-                              style: baseStyle,
-                              cursorColor: Colors.red,
-                              cursorWidth: 2,
-                              decoration: InputDecoration(
-                                hintText: _ctrl.text.isEmpty ? 'اكتب وصف المنشور هنا...' : null,
-                                hintStyle: TextStyle(
-                                  fontFamily: 'Tajawal',
-                                  fontSize: 15,
-                                  color: widget.isDark ? Colors.white.withOpacity(0.18) : Colors.black.withOpacity(0.2),
-                                  height: 1.75,
-                                ),
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                              onChanged: (_) {
-                                // تمرير تلقائي للأسفل عند الكتابة
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (_scrollCtrl.hasClients) {
-                                    _scrollCtrl.animateTo(
-                                      _scrollCtrl.position.maxScrollExtent,
-                                      duration: const Duration(milliseconds: 100),
-                                      curve: Curves.easeOut,
-                                    );
-                                  }
-                                });
-                              },
-                            ),
-                          ),
-                        ),
+                    // ── وضع التحرير WYSIWYG: يعرض التنسيق مباشرة بدون أكواد ──
+                    : _WysiwygEditor(
+                        ctrl: _ctrl,
+                        focusNode: _focusNode,
+                        scrollCtrl: _scrollCtrl,
+                        isDark: widget.isDark,
+                        baseStyle: baseStyle,
+                        currentLineAlign: _currentLineAlign,
+                        linkColor: linkColor,
+                        buildRichSpan: _buildRichSpan,
                       ),
               ),
 
@@ -7549,6 +7753,89 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── محرر WYSIWYG: يعرض rich text overlay فوق TextField ──
+class _WysiwygEditor extends StatelessWidget {
+  final TextEditingController ctrl;
+  final FocusNode focusNode;
+  final ScrollController scrollCtrl;
+  final bool isDark;
+  final TextStyle baseStyle;
+  final TextAlign currentLineAlign;
+  final Color linkColor;
+  final TextSpan Function(String, TextStyle, Color) buildRichSpan;
+
+  const _WysiwygEditor({
+    required this.ctrl,
+    required this.focusNode,
+    required this.scrollCtrl,
+    required this.isDark,
+    required this.baseStyle,
+    required this.currentLineAlign,
+    required this.linkColor,
+    required this.buildRichSpan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scrollbar(
+      controller: scrollCtrl,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: scrollCtrl,
+        padding: EdgeInsets.fromLTRB(
+          16, 12, 16,
+          MediaQuery.of(context).viewInsets.bottom + 80,
+        ),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: ctrl,
+            builder: (context, value, _) {
+              final richSpan = buildRichSpan(value.text, baseStyle, linkColor);
+              return Stack(
+                children: [
+                  // طبقة النص المنسق (WYSIWYG display)
+                  IgnorePointer(
+                    child: RichText(
+                      text: richSpan,
+                      textDirection: TextDirection.rtl,
+                      textAlign: currentLineAlign,
+                    ),
+                  ),
+                  // طبقة الـ TextField الشفافة للكتابة والتحرير
+                  TextField(
+                    controller: ctrl,
+                    focusNode: focusNode,
+                    maxLines: null,
+                    keyboardType: TextInputType.multiline,
+                    textDirection: TextDirection.rtl,
+                    textAlign: currentLineAlign,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: baseStyle.copyWith(color: Colors.transparent),
+                    cursorColor: Colors.red,
+                    cursorWidth: 2,
+                    decoration: InputDecoration(
+                      hintText: value.text.isEmpty ? 'اكتب وصف المنشور هنا...' : null,
+                      hintStyle: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 15,
+                        color: isDark ? Colors.white.withOpacity(0.18) : Colors.black.withOpacity(0.2),
+                        height: 1.75,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
