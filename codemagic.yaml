@@ -7,7 +7,9 @@ workflows:
 
     scripts:
       - flutter pub get
-      - flutter build ipa --release --no-codesign
+      - flutter build ios --release --no-codesign
+      - cd build/ios/iphoneos
+      - zip -r Runner.zip Runner.app
 
     artifacts:
-      - build/ios/ipa/*.ipa
+      - build/ios/iphoneos/Runner.zip
