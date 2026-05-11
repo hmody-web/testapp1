@@ -1205,6 +1205,96 @@ String stripHtmlTags(String htmlText) {
       .trim();
 }
 
+/// تحويل HTML إلى Markdown للتعديل في المحرر
+String htmlToMarkdown(String html) {
+  if (html.trim().isEmpty) return '';
+  // إذا لم يكن HTML (لا يحتوي على وسوم)، أعده كما هو
+  if (!html.contains('<') || !html.contains('>')) return html;
+
+  String text = html;
+
+  // h1, h2, h3 - استخدام [\s\S] بدل dotAll
+  text = text.replaceAllMapped(RegExp(r'<h1[^>]*>([\s\S]*?)</h1>'), (m) => '# ${_stripTags(m[1]!)}\n');
+  text = text.replaceAllMapped(RegExp(r'<h2[^>]*>([\s\S]*?)</h2>'), (m) => '## ${_stripTags(m[1]!)}\n');
+  text = text.replaceAllMapped(RegExp(r'<h3[^>]*>([\s\S]*?)</h3>'), (m) => '### ${_stripTags(m[1]!)}\n');
+
+  // hr
+  text = text.replaceAll(RegExp(r'<hr\s*/?>'), '\n---\n');
+
+  // blockquote
+  text = text.replaceAllMapped(RegExp(r'<blockquote[^>]*>([\s\S]*?)</blockquote>'), (m) => '> ${_stripTags(m[1]!)}\n');
+
+  // ol / ul / li
+  int olCounter = 0;
+  bool inOl = false;
+  final lines = text.split('\n');
+  final result = <String>[];
+  for (final line in lines) {
+    final t = line.trim();
+    if (t.startsWith('<ol')) { inOl = true; olCounter = 0; continue; }
+    if (t.startsWith('</ol>')) { inOl = false; result.add(''); continue; }
+    if (t.startsWith('<ul') || t.startsWith('</ul>')) { inOl = false; result.add(''); continue; }
+    final liMatch = RegExp(r'<li[^>]*>([\s\S]*?)</li>').firstMatch(t);
+    if (liMatch != null) {
+      final content = _stripTags(liMatch[1]!).trim();
+      if (inOl) {
+        olCounter++;
+        result.add('$olCounter. $content');
+      } else {
+        result.add('• $content');
+      }
+      continue;
+    }
+    result.add(line);
+  }
+  text = result.join('\n');
+
+  // strong / bold
+  text = text.replaceAllMapped(RegExp(r'<strong[^>]*>([\s\S]*?)</strong>'), (m) => '**${m[1]}**');
+  text = text.replaceAllMapped(RegExp(r'<b[^>]*>([\s\S]*?)</b>'), (m) => '**${m[1]}**');
+
+  // em / italic
+  text = text.replaceAllMapped(RegExp(r'<em[^>]*>([\s\S]*?)</em>'), (m) => '*${m[1]}*');
+  text = text.replaceAllMapped(RegExp(r'<i[^>]*>([\s\S]*?)</i>'), (m) => '*${m[1]}*');
+
+  // underline
+  text = text.replaceAllMapped(RegExp(r'<u[^>]*>([\s\S]*?)</u>'), (m) => '<u>${m[1]}</u>');
+
+  // code
+  text = text.replaceAllMapped(RegExp(r'<code[^>]*>([\s\S]*?)</code>'), (m) => '`${_stripTags(m[1]!)}`');
+
+  // links - href with double quotes
+  text = text.replaceAllMapped(RegExp(r'<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>'), (m) => '[${_stripTags(m[2]!)}](${m[1]})');
+  // links - href with single quotes
+  text = text.replaceAllMapped(RegExp(r"<a[^>]*href='([^']*)'[^>]*>([\s\S]*?)</a>"), (m) => '[${_stripTags(m[2]!)}](${m[1]})');
+
+  // p tags → plain text with newlines
+  text = text.replaceAllMapped(RegExp(r'<p[^>]*>([\s\S]*?)</p>'), (m) => '${m[1]}\n');
+
+  // br
+  text = text.replaceAll(RegExp(r'<br\s*/?>'), '\n');
+
+  // remove remaining tags
+  text = _stripTags(text);
+
+  // decode HTML entities
+  text = text.replaceAll('&amp;', '&');
+  text = text.replaceAll('&lt;', '<');
+  text = text.replaceAll('&gt;', '>');
+  text = text.replaceAll('&quot;', '"');
+  text = text.replaceAll('&#39;', "'");
+  text = text.replaceAll('&nbsp;', ' ');
+
+  // clean up excessive blank lines
+  text = text.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+
+  return text.trim();
+}
+
+String _stripTags(String html) {
+  return html.replaceAll(RegExp(r'<[^>]+>'), '');
+}
+
 /// تحويل Markdown إلى HTML لعرضه بشكل صحيح في flutter_html
 String markdownToHtml(String markdown) {
   if (markdown.trim().isEmpty) return '';
@@ -6798,23 +6888,59 @@ List<InlineSpan> _parseInline(String text, TextStyle base) {
       ));
     } else if (m.group(4) != null) {
       // `code`
-      spans.add(TextSpan(
-        text: m.group(4),
-        style: base.copyWith(
-          fontFamily: 'monospace',
-          backgroundColor: Colors.red.withOpacity(0.12),
-          color: Colors.red.shade300,
-          fontSize: (base.fontSize ?? 16) * 0.9,
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D0D0D),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFFFF3B3B), width: 1.2),
+            boxShadow: const [
+              BoxShadow(color: Color(0x55FF3B3B), blurRadius: 6, spreadRadius: 0),
+            ],
+          ),
+          child: Text(
+            m.group(4)!,
+            style: base.copyWith(
+              fontFamily: 'monospace',
+              color: const Color(0xFFFF6E6E),
+              fontSize: (base.fontSize ?? 16) * 0.88,
+              height: 1.4,
+            ),
+          ),
         ),
       ));
     } else if (m.group(5) != null) {
-      // [label](url)
-      spans.add(TextSpan(
-        text: m.group(5),
-        style: base.copyWith(
-          color: Colors.blue.shade300,
-          decoration: TextDecoration.underline,
-          decorationColor: Colors.blue.shade300,
+      // [label](url) - عرض كمربع أحمر جميل كأنه زر
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: Colors.red.withOpacity(0.7), width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.link_rounded, size: 13, color: Color(0xFFFF6B6B)),
+              const SizedBox(width: 4),
+              Text(
+                m.group(5)!,
+                style: base.copyWith(
+                  color: const Color(0xFFFF6B6B),
+                  fontSize: (base.fontSize ?? 16) * 0.9,
+                  decoration: TextDecoration.underline,
+                  decorationColor: const Color(0xFFFF6B6B),
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
         ),
       ));
     } else if (m.group(7) != null) {
@@ -6905,6 +7031,106 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     }
   }
 
+  void _insertNumberedListItem() {
+    final sel = _ctrl.selection;
+    final text = _ctrl.text;
+    final pos = sel.isValid ? sel.start : text.length;
+
+    // إيجاد بداية السطر الحالي
+    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    final currentLine = text.substring(lineStart, pos);
+
+    // هل السطر الحالي بالفعل عنصر مرقم؟
+    final currentMatch = RegExp(r'^(\d+)\. ').firstMatch(currentLine);
+    if (currentMatch != null) {
+      // toggle: إزالة البادئة
+      final prefix = currentMatch.group(0)!;
+      final newText = text.replaceRange(lineStart, lineStart + prefix.length, '');
+      _ctrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: (pos - prefix.length).clamp(0, newText.length)),
+      );
+      return;
+    }
+
+    // البحث عن آخر رقم في القائمة المرقمة قبل هذه النقطة
+    int nextNumber = 1;
+    if (lineStart > 0) {
+      // البحث في السطر السابق
+      final prevLineEnd = lineStart - 1;
+      final prevLineStart = text.lastIndexOf('\n', prevLineEnd - 1) + 1;
+      final prevLine = text.substring(prevLineStart, prevLineEnd);
+      final prevMatch = RegExp(r'^(\d+)\. ').firstMatch(prevLine);
+      if (prevMatch != null) {
+        nextNumber = int.parse(prevMatch.group(1)!) + 1;
+      }
+    }
+
+    final prefix = '$nextNumber. ';
+    final newText = text.replaceRange(lineStart, lineStart, prefix);
+    _ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: pos + prefix.length),
+    );
+  }
+
+  // معالج Enter لإضافة رقم تلقائي في القائمة المرقمة
+  void _handleNewLine() {
+    final sel = _ctrl.selection;
+    if (!sel.isValid) return;
+    final text = _ctrl.text;
+    final pos = sel.start;
+    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    final currentLine = text.substring(lineStart, pos);
+    final numMatch = RegExp(r'^(\d+)\. (.*)$').firstMatch(currentLine);
+    if (numMatch != null) {
+      final lineContent = numMatch.group(2) ?? '';
+      if (lineContent.isEmpty) {
+        // سطر فارغ مرقم → إنهاء القائمة
+        final newText = text.replaceRange(lineStart, pos, '');
+        _ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: lineStart),
+        );
+      } else {
+        final nextNum = int.parse(numMatch.group(1)!) + 1;
+        final insert = '\n$nextNum. ';
+        final newText = text.replaceRange(pos, sel.end, insert);
+        _ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: pos + insert.length),
+        );
+      }
+      return;
+    }
+    // سطر نقطي → إضافة • تلقائياً
+    if (RegExp(r'^[•] ').hasMatch(currentLine)) {
+      final lineContent = currentLine.substring(2);
+      if (lineContent.isEmpty) {
+        final newText = text.replaceRange(lineStart, pos, '');
+        _ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: lineStart),
+        );
+      } else {
+        const insert = '\n• ';
+        final newText = text.replaceRange(pos, sel.end, insert);
+        _ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: pos + insert.length),
+        );
+      }
+      return;
+    }
+    // سطر عادي
+    final insert = '\n';
+    final newText = text.replaceRange(pos, sel.end, insert);
+    _ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: pos + 1),
+    );
+  }
+
   void _insertHorizontalRule() {
     final pos = _ctrl.selection.isValid ? _ctrl.selection.end : _ctrl.text.length;
     final text = _ctrl.text;
@@ -6916,14 +7142,18 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     );
   }
 
-  void _showLinkDialog() async {
-    final sel = _ctrl.selection;
-    final selectedText = sel.isValid ? sel.textInside(_ctrl.text) : '';
-    String label = selectedText;
-    String url = '';
-    await showDialog(
+  void _showLinkDialog() {
+    // حفظ الـ selection قبل فتح الحوار
+    final savedSel = _ctrl.selection;
+    final savedText = _ctrl.text;
+    final selectedText = savedSel.isValid ? savedSel.textInside(savedText) : '';
+    final labelCtrl = TextEditingController(text: selectedText);
+    final urlCtrl = TextEditingController();
+
+    showDialog(
       context: context,
-      builder: (_) => Directionality(
+      barrierDismissible: false,
+      builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           backgroundColor: widget.isDark ? const Color(0xFF1A1A1A) : Colors.white,
@@ -6934,6 +7164,7 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
             children: [
               TextField(
                 autofocus: true,
+                controller: labelCtrl,
                 textDirection: TextDirection.rtl,
                 style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black),
                 decoration: InputDecoration(
@@ -6942,11 +7173,10 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.red.withOpacity(0.3))),
                   focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)),
                 ),
-                controller: TextEditingController(text: label),
-                onChanged: (v) => label = v,
               ),
               const SizedBox(height: 12),
               TextField(
+                controller: urlCtrl,
                 textDirection: TextDirection.ltr,
                 style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black),
                 decoration: InputDecoration(
@@ -6957,13 +7187,16 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.red.withOpacity(0.3))),
                   focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)),
                 ),
-                onChanged: (v) => url = v,
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                labelCtrl.dispose();
+                urlCtrl.dispose();
+                Navigator.pop(dialogContext);
+              },
               child: Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white54 : Colors.black45)),
             ),
             ElevatedButton(
@@ -6972,19 +7205,27 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () {
+                final url = urlCtrl.text.trim();
+                final label = labelCtrl.text.trim();
+                Navigator.pop(dialogContext);
                 if (url.isNotEmpty) {
                   final finalLabel = label.isNotEmpty ? label : url;
                   final finalUrl = url.startsWith('http') ? url : 'https://$url';
                   final linkText = '[$finalLabel]($finalUrl)';
-                  if (sel.isValid) {
-                    final newText = _ctrl.text.replaceRange(sel.start, sel.end, linkText);
-                    _ctrl.value = TextEditingValue(
-                      text: newText,
-                      selection: TextSelection.collapsed(offset: sel.start + linkText.length),
-                    );
+                  final start = savedSel.isValid ? savedSel.start : savedText.length;
+                  final end = savedSel.isValid ? savedSel.end : savedText.length;
+                  final newText = savedText.replaceRange(start, end, linkText);
+                  if (mounted) {
+                    setState(() {
+                      _ctrl.value = TextEditingValue(
+                        text: newText,
+                        selection: TextSelection.collapsed(offset: start + linkText.length),
+                      );
+                    });
                   }
                 }
-                Navigator.pop(context);
+                labelCtrl.dispose();
+                urlCtrl.dispose();
               },
               child: const Text('إضافة', style: TextStyle(fontFamily: 'Tajawal', color: Colors.white)),
             ),
@@ -7162,7 +7403,7 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                         _toolbarBtn(
                           icon: Icons.format_list_numbered,
                           tooltip: 'قائمة مرقمة',
-                          onTap: () => _insertLinePrefix('1. '),
+                          onTap: _insertNumberedListItem,
                         ),
                         _toolbarBtn(
                           icon: Icons.format_quote,
@@ -7226,9 +7467,11 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                                     'h2': Style(color: Colors.red, fontFamily: 'Tajawal'),
                                     'h3': Style(color: Colors.red, fontFamily: 'Tajawal'),
                                     'code': Style(
-                                      backgroundColor: Colors.red.withOpacity(0.1),
-                                      color: Colors.red.shade300,
+                                      backgroundColor: const Color(0xFF0D0D0D),
+                                      color: const Color(0xFFFF6E6E),
                                       fontFamily: 'monospace',
+                                      border: Border.all(color: const Color(0xFFFF3B3B), width: 1.2),
+                                      padding: HtmlPaddings.symmetric(horizontal: 7, vertical: 2),
                                     ),
                                     'blockquote': Style(
                                       color: (textColor).withOpacity(0.55),
@@ -7240,65 +7483,38 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                                 ),
                         ),
                       )
-                    // ── وضع التحرير: TextField مع RichText overlay ──
-                    : Container(
-                        color: bg,
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                        child: Stack(
-                          children: [
-                            // RichText خلفي للعرض المرئي
-                            Positioned.fill(
-                              child: SingleChildScrollView(
-                                physics: const NeverScrollableScrollPhysics(),
-                                child: Directionality(
-                                  textDirection: TextDirection.rtl,
-                                  child: Padding(
-                                    // محاذاة مع TextField الداخلي
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: RichText(
-                                      textDirection: TextDirection.rtl,
-                                      text: TextSpan(
-                                        children: _ctrl.text.isEmpty
-                                            ? [TextSpan(text: '', style: baseStyle)]
-                                            : _buildRichSpans(_ctrl.text, baseStyle),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            // TextField شفاف فوق RichText للتحديد والكتابة
-                            Directionality(
+                    // ── وضع التحرير: TextField مباشر مع Scrollbar ──
+                    : Scrollbar(
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: TextField(
+                              controller: _ctrl,
+                              focusNode: _focusNode,
+                              maxLines: null,
                               textDirection: TextDirection.rtl,
-                              child: TextField(
-                                controller: _ctrl,
-                                focusNode: _focusNode,
-                                maxLines: null,
-                                expands: true,
-                                textDirection: TextDirection.rtl,
-                                textAlign: TextAlign.right,
-                                textAlignVertical: TextAlignVertical.top,
-                                // اللون شفاف تماماً - RichText يعرض النص
-                                style: baseStyle.copyWith(color: Colors.transparent),
-                                cursorColor: Colors.red,
-                                cursorWidth: 2,
-                                selectionControls: MaterialTextSelectionControls(),
-                                decoration: InputDecoration(
-                                  hintText: _ctrl.text.isEmpty
-                                      ? 'اكتب وصف المنشور هنا...'
-                                      : null,
-                                  hintStyle: TextStyle(
-                                    fontFamily: 'Tajawal',
-                                    fontSize: 15,
-                                    color: widget.isDark ? Colors.white.withOpacity(0.18) : Colors.black.withOpacity(0.2),
-                                    height: 1.75,
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
+                              textAlign: TextAlign.right,
+                              textAlignVertical: TextAlignVertical.top,
+                              style: baseStyle,
+                              cursorColor: Colors.red,
+                              cursorWidth: 2,
+                              decoration: InputDecoration(
+                                hintText: _ctrl.text.isEmpty
+                                    ? 'اكتب وصف المنشور هنا...'
+                                    : null,
+                                hintStyle: TextStyle(
+                                  fontFamily: 'Tajawal',
+                                  fontSize: 15,
+                                  color: widget.isDark ? Colors.white.withOpacity(0.18) : Colors.black.withOpacity(0.2),
+                                  height: 1.75,
                                 ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
                               ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
               ),
@@ -7673,7 +7889,8 @@ class _AdminEditTabState extends State<_AdminEditTab> {
 
   void _startEdit(AdminPost post) {
     _editTitleCtrl.text = post.title;
-    _editDescCtrl.text = post.description;
+    // تحويل HTML إلى Markdown لعرضه بشكل صحيح في المحرر
+    _editDescCtrl.text = htmlToMarkdown(post.description);
     _editType = post.type;
     _editImageFile = null;
     setState(() => _editing = post);
