@@ -5401,6 +5401,165 @@ Future<void> _handleGoogleSignIn() async {
     );
   }
 
+  // ── التحقق من صلاحيات المشرف ──
+  bool _isAdminUser() {
+    final email = _currentUser?.email ?? '';
+    return email == 'hmode.qu@gmail.com' || email == 'hmode.qq@gmail.com';
+  }
+
+  // ── كرت لوحة التحكم ──
+  Widget _buildAdminPanelCard() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            _LeftToRightPageRoute(
+              page: AdminPanelPage(isDark: widget.isDark),
+            ),
+          );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF1A0000),
+                const Color(0xFF3D0000),
+                const Color(0xFF7B0000),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: Colors.red.withOpacity(0.5),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(0.35),
+                blurRadius: 20,
+                spreadRadius: 2,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              children: [
+                // خلفية زخرفية
+                Positioned(
+                  right: -20,
+                  top: -20,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.red.withOpacity(0.1),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: -10,
+                  bottom: -20,
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.red.withOpacity(0.08),
+                    ),
+                  ),
+                ),
+                // المحتوى
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.red.withOpacity(0.4),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.dashboard_customize_rounded,
+                          color: Colors.red,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text(
+                                  'لوحة التحكم',
+                                  style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'مشرف',
+                                    style: TextStyle(
+                                      fontFamily: 'Tajawal',
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              'إدارة المنشورات والتعديلات',
+                              style: TextStyle(
+                                fontFamily: 'Tajawal',
+                                fontSize: 13,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.red.withOpacity(0.8),
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCard({
     required Widget child,
     VoidCallback? onTap,
@@ -5700,6 +5859,8 @@ Future<void> _handleGoogleSignIn() async {
                   ],
                 ),
               ),
+                    // ── كرت لوحة التحكم (للمشرفين فقط) ──
+                    if (_isAdminUser()) _buildAdminPanelCard(),
                     const SizedBox(height: 90),
             ],
           ),
@@ -5944,6 +6105,633 @@ class _HoverCardState extends State<_HoverCard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+// ============================================================
+// 🛡️ صفحة لوحة التحكم (للمشرفين فقط)
+// ============================================================
+class AdminPanelPage extends StatefulWidget {
+  final bool isDark;
+  const AdminPanelPage({Key? key, required this.isDark}) : super(key: key);
+
+  @override
+  State<AdminPanelPage> createState() => _AdminPanelPageState();
+}
+
+class _AdminPanelPageState extends State<AdminPanelPage> {
+  int _selectedTab = 0; // 0 = النشر, 1 = التعديل
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isDark ? const Color(0xFF111111) : Colors.white;
+    final textColor = widget.isDark ? Colors.white : Colors.black;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: bg,
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                // ── البار العلوي ──
+                _AdminTopBar(isDark: widget.isDark, onBack: () => Navigator.pop(context)),
+
+                // ── المحتوى ──
+                Expanded(
+                  child: _selectedTab == 0
+                      ? _AdminPublishTab(isDark: widget.isDark)
+                      : _AdminEditTab(isDark: widget.isDark),
+                ),
+
+                // مساحة للبار الزجاجي السفلي
+                const SizedBox(height: 90),
+              ],
+            ),
+
+            // ── البار الزجاجي السفلي ──
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _AdminGlassNavBar(
+                selectedTab: _selectedTab,
+                isDark: widget.isDark,
+                onTabChanged: (i) => setState(() => _selectedTab = i),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// البار العلوي للوحة التحكم
+class _AdminTopBar extends StatelessWidget {
+  final bool isDark;
+  final VoidCallback onBack;
+
+  const _AdminTopBar({required this.isDark, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161616) : Colors.white,
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.red.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              // زر الرجوع
+              GestureDetector(
+                onTap: onBack,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.red.withOpacity(0.25),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Colors.red,
+                    size: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              // اللوجو
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.dashboard_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // نص لوحة التحكم
+              Text(
+                'لوحة التحكم',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              const Spacer(),
+              // شارة المشرف
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7B0000), Colors.red],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'مشرف',
+                  style: TextStyle(
+                    fontFamily: 'Tajawal',
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// البار الزجاجي السفلي للوحة التحكم
+class _AdminGlassNavBar extends StatelessWidget {
+  final int selectedTab;
+  final bool isDark;
+  final ValueChanged<int> onTabChanged;
+
+  const _AdminGlassNavBar({
+    required this.selectedTab,
+    required this.isDark,
+    required this.onTabChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 25),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            child: Container(
+              height: 60,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.red.withOpacity(0.03)
+                    : const Color.fromARGB(255, 243, 33, 33).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(40),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.18)
+                      : Colors.black.withOpacity(0.10),
+                  width: 0.5,
+                ),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final itemWidth = constraints.maxWidth / 2;
+                  return Stack(
+                    children: [
+                      // المؤشر المتحرك
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        left: selectedTab * itemWidth + 5,
+                        top: 5,
+                        bottom: 5,
+                        width: itemWidth - 10,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(32),
+                            gradient: RadialGradient(
+                              center: Alignment.center,
+                              radius: 1.0,
+                              colors: [
+                                const Color(0xFFFF3333).withOpacity(0.3),
+                                const Color(0xFFFF3333).withOpacity(0.12),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: const Color(0xFFFF3333).withOpacity(0.2),
+                              width: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // الأزرار
+                      Row(
+                        children: [
+                          _AdminNavItem(
+                            icon: Icons.publish_rounded,
+                            label: 'النشر',
+                            isActive: selectedTab == 0,
+                            isDark: isDark,
+                            onTap: () => onTabChanged(0),
+                          ),
+                          _AdminNavItem(
+                            icon: Icons.edit_rounded,
+                            label: 'التعديل',
+                            isActive: selectedTab == 1,
+                            isDark: isDark,
+                            onTap: () => onTabChanged(1),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminNavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _AdminNavItem({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isActive
+        ? Colors.red
+        : (isDark ? Colors.white.withOpacity(0.7) : Colors.black54);
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── تاب النشر ──
+class _AdminPublishTab extends StatelessWidget {
+  final bool isDark;
+  const _AdminPublishTab({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          // عنوان القسم
+          Text(
+            'نشر منشور جديد',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'أضف محتوى جديداً للتطبيق',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 14,
+              color: isDark ? Colors.white54 : Colors.black45,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _AdminInputField(
+            isDark: isDark,
+            label: 'عنوان المنشور',
+            icon: Icons.title_rounded,
+            hint: 'اكتب عنوان المنشور...',
+          ),
+          const SizedBox(height: 16),
+          _AdminInputField(
+            isDark: isDark,
+            label: 'الوصف',
+            icon: Icons.description_rounded,
+            hint: 'اكتب وصف المنشور...',
+            maxLines: 5,
+          ),
+          const SizedBox(height: 16),
+          _AdminInputField(
+            isDark: isDark,
+            label: 'رابط الصورة',
+            icon: Icons.image_rounded,
+            hint: 'https://...',
+          ),
+          const SizedBox(height: 24),
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF7B0000), Colors.red],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {},
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.publish_rounded, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        'نشر المنشور',
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── تاب التعديل ──
+class _AdminEditTab extends StatelessWidget {
+  final bool isDark;
+  const _AdminEditTab({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          Text(
+            'تعديل المنشورات',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'ابحث عن منشور لتعديله أو حذفه',
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              fontSize: 14,
+              color: isDark ? Colors.white54 : Colors.black45,
+            ),
+          ),
+          const SizedBox(height: 24),
+          // حقل البحث
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.red.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  child: Icon(Icons.search_rounded, color: Colors.red, size: 24),
+                ),
+                Expanded(
+                  child: TextField(
+                    style: TextStyle(
+                      fontFamily: 'Tajawal',
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن منشور...',
+                      hintStyle: TextStyle(
+                        fontFamily: 'Tajawal',
+                        color: isDark ? Colors.white38 : Colors.black38,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          // قائمة منشورات وهمية للعرض
+          ...List.generate(3, (i) => _AdminPostTile(isDark: isDark, index: i)),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminPostTile extends StatelessWidget {
+  final bool isDark;
+  final int index;
+  const _AdminPostTile({required this.isDark, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = ['منشور تجريبي #1', 'منشور تجريبي #2', 'منشور تجريبي #3'];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.white12 : Colors.black12,
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.article_rounded, color: Colors.red, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              titles[index],
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit_rounded, color: Colors.blue, size: 20),
+                onPressed: () {},
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_rounded, color: Colors.red, size: 20),
+                onPressed: () {},
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminInputField extends StatelessWidget {
+  final bool isDark;
+  final String label;
+  final IconData icon;
+  final String hint;
+  final int maxLines;
+
+  const _AdminInputField({
+    required this.isDark,
+    required this.label,
+    required this.icon,
+    required this.hint,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Colors.red, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Tajawal',
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white70 : Colors.black54,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.red.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: TextField(
+            maxLines: maxLines,
+            style: TextStyle(
+              fontFamily: 'Tajawal',
+              color: isDark ? Colors.white : Colors.black,
+            ),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(
+                fontFamily: 'Tajawal',
+                color: isDark ? Colors.white30 : Colors.black38,
+              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.all(14),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
