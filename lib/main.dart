@@ -1205,6 +1205,149 @@ String stripHtmlTags(String htmlText) {
       .trim();
 }
 
+/// تحويل Markdown إلى HTML لعرضه بشكل صحيح في flutter_html
+String markdownToHtml(String markdown) {
+  if (markdown.trim().isEmpty) return '';
+
+  // إذا كان المحتوى يبدو بالفعل HTML، أعده كما هو
+  if (markdown.trimLeft().startsWith('<') && markdown.contains('>')) {
+    return markdown;
+  }
+
+  String html = markdown;
+
+  // ── 1. escape HTML entities الخاصة (قبل أي شيء) ──
+  html = html.replaceAll('&', '&amp;');
+  // لا نعالج < و > لأن المستخدم قد يكون كتب وسوم <u> يدوياً
+  // لذا نُعيد & فقط
+
+  // ── 2. العناوين ##, ###, # ──
+  html = html.replaceAllMapped(
+    RegExp(r'^### (.+)$', multiLine: true),
+    (m) => '<h3 dir="rtl">${m[1]}</h3>',
+  );
+  html = html.replaceAllMapped(
+    RegExp(r'^## (.+)$', multiLine: true),
+    (m) => '<h2 dir="rtl">${m[1]}</h2>',
+  );
+  html = html.replaceAllMapped(
+    RegExp(r'^# (.+)$', multiLine: true),
+    (m) => '<h1 dir="rtl">${m[1]}</h1>',
+  );
+
+  // ── 3. خط أفقي --- ──
+  html = html.replaceAll(RegExp(r'^---$', multiLine: true), '<hr/>');
+
+  // ── 4. اقتباس > ──
+  html = html.replaceAllMapped(
+    RegExp(r'^> (.+)$', multiLine: true),
+    (m) => '<blockquote dir="rtl">${m[1]}</blockquote>',
+  );
+
+  // ── 5. قائمة مرقمة 1. ──
+  final numberedLines = <String>[];
+  bool inOl = false;
+  for (final line in html.split('\n')) {
+    final match = RegExp(r'^\d+\. (.+)$').firstMatch(line);
+    if (match != null) {
+      if (!inOl) { numberedLines.add('<ol dir="rtl">'); inOl = true; }
+      numberedLines.add('<li>${match[1]}</li>');
+    } else {
+      if (inOl) { numberedLines.add('</ol>'); inOl = false; }
+      numberedLines.add(line);
+    }
+  }
+  if (inOl) numberedLines.add('</ol>');
+  html = numberedLines.join('\n');
+
+  // ── 6. قائمة نقطية • أو - ──
+  final bulletLines = <String>[];
+  bool inUl = false;
+  for (final line in html.split('\n')) {
+    final match = RegExp(r'^[•\-\*] (.+)$').firstMatch(line);
+    if (match != null) {
+      if (!inUl) { bulletLines.add('<ul dir="rtl">'); inUl = true; }
+      bulletLines.add('<li>${match[1]}</li>');
+    } else {
+      if (inUl) { bulletLines.add('</ul>'); inUl = false; }
+      bulletLines.add(line);
+    }
+  }
+  if (inUl) bulletLines.add('</ul>');
+  html = bulletLines.join('\n');
+
+  // ── 7. Bold & Italic مجتمعان ***نص*** ──
+  html = html.replaceAllMapped(
+    RegExp(r'\*\*\*(.+?)\*\*\*'),
+    (m) => '<strong><em>${m[1]}</em></strong>',
+  );
+
+  // ── 8. Bold **نص** ──
+  html = html.replaceAllMapped(
+    RegExp(r'\*\*(.+?)\*\*'),
+    (m) => '<strong>${m[1]}</strong>',
+  );
+
+  // ── 9. Italic *نص* ──
+  html = html.replaceAllMapped(
+    RegExp(r'\*(.+?)\*'),
+    (m) => '<em>${m[1]}</em>',
+  );
+
+  // ── 10. Inline code `نص` ──
+  html = html.replaceAllMapped(
+    RegExp(r'`(.+?)`'),
+    (m) => '<code>${m[1]}</code>',
+  );
+
+  // ── 11. رابط [نص](url) ──
+  html = html.replaceAllMapped(
+    RegExp(r'\[([^\]]+)\]\(([^)]+)\)'),
+    (m) => '<a href="${m[2]}">${m[1]}</a>',
+  );
+
+  // ── 12. أسطر فارغة → فقرات جديدة ──
+  // نقسم الأسطر ونجمعها في فقرات
+  final lines = html.split('\n');
+  final paragraphs = <String>[];
+  final buffer = StringBuffer();
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    // السطور التي تبدأ بوسم HTML بلوك نتركها كما هي
+    final isBlock = trimmed.startsWith('<h') ||
+        trimmed.startsWith('<hr') ||
+        trimmed.startsWith('<ol') ||
+        trimmed.startsWith('</ol') ||
+        trimmed.startsWith('<ul') ||
+        trimmed.startsWith('</ul') ||
+        trimmed.startsWith('<li') ||
+        trimmed.startsWith('<blockquote') ||
+        trimmed.startsWith('</blockquote');
+
+    if (isBlock) {
+      if (buffer.isNotEmpty) {
+        paragraphs.add('<p dir="rtl">${buffer.toString().trim()}</p>');
+        buffer.clear();
+      }
+      paragraphs.add(trimmed);
+    } else if (trimmed.isEmpty) {
+      if (buffer.isNotEmpty) {
+        paragraphs.add('<p dir="rtl">${buffer.toString().trim()}</p>');
+        buffer.clear();
+      }
+    } else {
+      if (buffer.isNotEmpty) buffer.write('<br/>');
+      buffer.write(trimmed);
+    }
+  }
+  if (buffer.isNotEmpty) {
+    paragraphs.add('<p dir="rtl">${buffer.toString().trim()}</p>');
+  }
+
+  return paragraphs.join('\n');
+}
+
 const String _viewedPostsStorageKey = 'viewed_posts';
 
 Future<List<PostItem>> fetchPosts() async {
@@ -3074,11 +3217,72 @@ appBar: AppBar(
                           textAlign: TextAlign.right,
                         ),
                         'p': Style(
-                          margin: Margins.zero,
+                          margin: Margins.only(bottom: 8),
                           padding: HtmlPaddings.zero,
+                          textAlign: TextAlign.right,
+                        ),
+                        'h1': Style(
+                          color: Colors.red,
+                          fontFamily: 'Tajawal',
+                          fontWeight: FontWeight.bold,
+                          fontSize: FontSize(24),
+                          margin: Margins.only(top: 16, bottom: 8),
+                          textAlign: TextAlign.right,
+                        ),
+                        'h2': Style(
+                          color: Colors.red,
+                          fontFamily: 'Tajawal',
+                          fontWeight: FontWeight.bold,
+                          fontSize: FontSize(20),
+                          margin: Margins.only(top: 14, bottom: 6),
+                          textAlign: TextAlign.right,
+                        ),
+                        'h3': Style(
+                          color: Colors.red,
+                          fontFamily: 'Tajawal',
+                          fontWeight: FontWeight.bold,
+                          fontSize: FontSize(18),
+                          margin: Margins.only(top: 12, bottom: 4),
+                          textAlign: TextAlign.right,
                         ),
                         'strong': Style(fontWeight: FontWeight.bold),
-                        'a': Style(color: Colors.red),
+                        'em': Style(fontStyle: FontStyle.italic),
+                        'u': Style(textDecoration: TextDecoration.underline),
+                        'a': Style(color: Colors.red, textDecoration: TextDecoration.underline),
+                        'code': Style(
+                          fontFamily: 'monospace',
+                          backgroundColor: Colors.red.withOpacity(0.1),
+                          color: Colors.red.shade300,
+                          fontSize: FontSize(14),
+                          padding: HtmlPaddings.symmetric(horizontal: 4, vertical: 2),
+                        ),
+                        'blockquote': Style(
+                          color: isDark ? Colors.white38 : Colors.black38,
+                          fontStyle: FontStyle.italic,
+                          border: Border(right: BorderSide(color: Colors.red, width: 3)),
+                          padding: HtmlPaddings.only(right: 12, top: 4, bottom: 4),
+                          margin: Margins.only(right: 0, top: 8, bottom: 8),
+                        ),
+                        'ul': Style(
+                          textAlign: TextAlign.right,
+                          margin: Margins.only(right: 16, bottom: 8),
+                          padding: HtmlPaddings.zero,
+                        ),
+                        'ol': Style(
+                          textAlign: TextAlign.right,
+                          margin: Margins.only(right: 16, bottom: 8),
+                          padding: HtmlPaddings.zero,
+                        ),
+                        'li': Style(
+                          textAlign: TextAlign.right,
+                          fontFamily: 'Tajawal',
+                          fontSize: FontSize(16),
+                          lineHeight: LineHeight.number(1.7),
+                        ),
+                        'hr': Style(
+                          border: Border(bottom: BorderSide(color: Colors.red.withOpacity(0.3), width: 1)),
+                          margin: Margins.symmetric(vertical: 12),
+                        ),
                       },
                       onLinkTap: (url, attributes, element) {
                         if (url == null || url.isEmpty) return;
@@ -6501,6 +6705,133 @@ class AdminPost {
 // WYSIWYG محرر النصوص بملء الشاشة
 // ────────────────────────────────────────────────────────────
 
+/// بناء RichText من Markdown للعرض المباشر داخل المحرر
+List<InlineSpan> _buildRichSpans(String text, TextStyle base) {
+  final spans = <InlineSpan>[];
+  // نعالج سطراً سطراً
+  final lines = text.split('\n');
+  for (int li = 0; li < lines.length; li++) {
+    if (li > 0) spans.add(const TextSpan(text: '\n'));
+    final line = lines[li];
+
+    // عنوان ##
+    if (line.startsWith('## ')) {
+      spans.add(TextSpan(
+        text: line.substring(3),
+        style: base.copyWith(fontSize: (base.fontSize ?? 16) * 1.3, fontWeight: FontWeight.bold, color: Colors.red),
+      ));
+      continue;
+    }
+    // عنوان #
+    if (line.startsWith('# ')) {
+      spans.add(TextSpan(
+        text: line.substring(2),
+        style: base.copyWith(fontSize: (base.fontSize ?? 16) * 1.6, fontWeight: FontWeight.bold, color: Colors.red),
+      ));
+      continue;
+    }
+    // اقتباس >
+    if (line.startsWith('> ')) {
+      spans.add(TextSpan(
+        text: '❝ ${line.substring(2)}',
+        style: base.copyWith(
+          color: (base.color ?? Colors.white).withOpacity(0.55),
+          fontStyle: FontStyle.italic,
+        ),
+      ));
+      continue;
+    }
+    // قائمة نقطية
+    if (RegExp(r'^[•\-\*] ').hasMatch(line)) {
+      spans.add(TextSpan(
+        text: '• ${line.substring(2)}',
+        style: base,
+      ));
+      continue;
+    }
+    // قائمة مرقمة
+    final numMatch = RegExp(r'^\d+\. (.+)$').firstMatch(line);
+    if (numMatch != null) {
+      spans.add(TextSpan(text: line, style: base));
+      continue;
+    }
+    // سطر عادي - نطبق inline formatting
+    spans.addAll(_parseInline(line, base));
+  }
+  return spans;
+}
+
+List<InlineSpan> _parseInline(String text, TextStyle base) {
+  final spans = <InlineSpan>[];
+  // نمط يتعرف على: ***x***, **x**, *x*, `x`, [label](url), <u>x</u>
+  final pattern = RegExp(
+    r'\*\*\*(.+?)\*\*\*'
+    r'|\*\*(.+?)\*\*'
+    r'|\*(.+?)\*'
+    r'|`(.+?)`'
+    r'|\[([^\]]+)\]\(([^)]+)\)'
+    r'|<u>(.+?)</u>',
+  );
+
+  int cursor = 0;
+  for (final m in pattern.allMatches(text)) {
+    if (m.start > cursor) {
+      spans.add(TextSpan(text: text.substring(cursor, m.start), style: base));
+    }
+    if (m.group(1) != null) {
+      // ***bold+italic***
+      spans.add(TextSpan(
+        text: m.group(1),
+        style: base.copyWith(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+      ));
+    } else if (m.group(2) != null) {
+      // **bold**
+      spans.add(TextSpan(
+        text: m.group(2),
+        style: base.copyWith(fontWeight: FontWeight.bold),
+      ));
+    } else if (m.group(3) != null) {
+      // *italic*
+      spans.add(TextSpan(
+        text: m.group(3),
+        style: base.copyWith(fontStyle: FontStyle.italic),
+      ));
+    } else if (m.group(4) != null) {
+      // `code`
+      spans.add(TextSpan(
+        text: m.group(4),
+        style: base.copyWith(
+          fontFamily: 'monospace',
+          backgroundColor: Colors.red.withOpacity(0.12),
+          color: Colors.red.shade300,
+          fontSize: (base.fontSize ?? 16) * 0.9,
+        ),
+      ));
+    } else if (m.group(5) != null) {
+      // [label](url)
+      spans.add(TextSpan(
+        text: m.group(5),
+        style: base.copyWith(
+          color: Colors.blue.shade300,
+          decoration: TextDecoration.underline,
+          decorationColor: Colors.blue.shade300,
+        ),
+      ));
+    } else if (m.group(7) != null) {
+      // <u>underline</u>
+      spans.add(TextSpan(
+        text: m.group(7),
+        style: base.copyWith(decoration: TextDecoration.underline),
+      ));
+    }
+    cursor = m.end;
+  }
+  if (cursor < text.length) {
+    spans.add(TextSpan(text: text.substring(cursor), style: base));
+  }
+  return spans;
+}
+
 /// صفحة المحرر الكاملة
 class _FullScreenEditorPage extends StatefulWidget {
   final String initialText;
@@ -6515,17 +6846,16 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
   late TextEditingController _ctrl;
   late FocusNode _focusNode;
 
-  // toolbar state
-  bool _bold = false;
-  bool _italic = false;
-  bool _underline = false;
-  bool _rtl = true;
+  // وضع المعاينة
+  bool _previewMode = false;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialText);
     _focusNode = FocusNode();
+    // استمع لتغيرات النص لإعادة البناء
+    _ctrl.addListener(() { if (mounted) setState(() {}); });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -6538,27 +6868,129 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     super.dispose();
   }
 
+  // ── تطبيق التنسيق على النص المحدد ──
   void _wrapSelection(String before, String after) {
     final sel = _ctrl.selection;
     if (!sel.isValid) return;
     final text = _ctrl.text;
-    final selectedText = sel.textInside(text);
-    final newText = text.replaceRange(sel.start, sel.end, '$before$selectedText$after');
+    final selected = sel.textInside(text);
+    final newText = text.replaceRange(sel.start, sel.end, '$before$selected$after');
     _ctrl.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: sel.start + before.length + selectedText.length + after.length),
+      selection: TextSelection(
+        baseOffset: sel.start + before.length,
+        extentOffset: sel.start + before.length + selected.length,
+      ),
     );
   }
 
-  void _insertLine(String prefix) {
+  void _insertLinePrefix(String prefix) {
     final sel = _ctrl.selection;
-    if (!sel.isValid) return;
     final text = _ctrl.text;
-    final lineStart = text.lastIndexOf('\n', sel.start - 1) + 1;
-    final newText = text.replaceRange(lineStart, lineStart, prefix);
+    final pos = sel.isValid ? sel.start : text.length;
+    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    // إذا كان البادئة موجودة بالفعل، أزلها (toggle)
+    if (text.substring(lineStart).startsWith(prefix)) {
+      final newText = text.replaceRange(lineStart, lineStart + prefix.length, '');
+      _ctrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: (pos - prefix.length).clamp(0, newText.length)),
+      );
+    } else {
+      final newText = text.replaceRange(lineStart, lineStart, prefix);
+      _ctrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: pos + prefix.length),
+      );
+    }
+  }
+
+  void _insertHorizontalRule() {
+    final pos = _ctrl.selection.isValid ? _ctrl.selection.end : _ctrl.text.length;
+    final text = _ctrl.text;
+    final insert = '\n---\n';
+    final newText = text.replaceRange(pos, pos, insert);
     _ctrl.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: sel.start + prefix.length),
+      selection: TextSelection.collapsed(offset: pos + insert.length),
+    );
+  }
+
+  void _showLinkDialog() async {
+    final sel = _ctrl.selection;
+    final selectedText = sel.isValid ? sel.textInside(_ctrl.text) : '';
+    String label = selectedText;
+    String url = '';
+    await showDialog(
+      context: context,
+      builder: (_) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: widget.isDark ? const Color(0xFF1A1A1A) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('إضافة رابط', style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                autofocus: true,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black),
+                decoration: InputDecoration(
+                  labelText: 'نص الرابط',
+                  labelStyle: TextStyle(fontFamily: 'Tajawal', color: Colors.red.withOpacity(0.8)),
+                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.red.withOpacity(0.3))),
+                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)),
+                ),
+                controller: TextEditingController(text: label),
+                onChanged: (v) => label = v,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                textDirection: TextDirection.ltr,
+                style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white : Colors.black),
+                decoration: InputDecoration(
+                  labelText: 'رابط URL',
+                  hintText: 'https://',
+                  labelStyle: TextStyle(fontFamily: 'Tajawal', color: Colors.red.withOpacity(0.8)),
+                  hintStyle: TextStyle(color: widget.isDark ? Colors.white30 : Colors.black26),
+                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.red.withOpacity(0.3))),
+                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)),
+                ),
+                onChanged: (v) => url = v,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal', color: widget.isDark ? Colors.white54 : Colors.black45)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                if (url.isNotEmpty) {
+                  final finalLabel = label.isNotEmpty ? label : url;
+                  final finalUrl = url.startsWith('http') ? url : 'https://$url';
+                  final linkText = '[$finalLabel]($finalUrl)';
+                  if (sel.isValid) {
+                    final newText = _ctrl.text.replaceRange(sel.start, sel.end, linkText);
+                    _ctrl.value = TextEditingValue(
+                      text: newText,
+                      selection: TextSelection.collapsed(offset: sel.start + linkText.length),
+                    );
+                  }
+                }
+                Navigator.pop(context);
+              },
+              child: const Text('إضافة', style: TextStyle(fontFamily: 'Tajawal', color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -6568,13 +7000,13 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+          duration: const Duration(milliseconds: 120),
           width: 38,
           height: 38,
           margin: const EdgeInsets.symmetric(horizontal: 3),
           decoration: BoxDecoration(
             color: active
-                ? Colors.red.withOpacity(0.25)
+                ? Colors.red.withOpacity(0.22)
                 : (widget.isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06)),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
@@ -6593,11 +7025,28 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
     final bg = widget.isDark ? const Color(0xFF111111) : Colors.white;
     final surface = widget.isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5);
     final textColor = widget.isDark ? Colors.white : Colors.black87;
+    final baseStyle = TextStyle(
+      fontFamily: 'Tajawal',
+      fontSize: 16,
+      height: 1.75,
+      color: textColor,
+    );
+
+    // تحقق من أن التحديد الحالي يغطي نصاً مُنسَّقاً
+    final sel = _ctrl.selection;
+    final currentText = _ctrl.text;
+    final selectedText = sel.isValid ? sel.textInside(currentText) : '';
+    final isBold = selectedText.isNotEmpty &&
+        (currentText.contains('**$selectedText**') || RegExp(r'\*\*[^*]+\*\*').hasMatch(selectedText));
+    final isItalic = selectedText.isNotEmpty &&
+        (!isBold && currentText.contains('*$selectedText*'));
+    final isUnderline = selectedText.isNotEmpty && currentText.contains('<u>$selectedText</u>');
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: bg,
+        resizeToAvoidBottomInset: true,
         body: SafeArea(
           child: Column(
             children: [
@@ -6606,10 +7055,11 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: surface,
-                  border: Border(bottom: BorderSide(color: Colors.red.withOpacity(0.25), width: 1)),
+                  border: Border(bottom: BorderSide(color: Colors.red.withOpacity(0.22), width: 1)),
                 ),
                 child: Row(
                   children: [
+                    // زر حفظ
                     GestureDetector(
                       onTap: () => Navigator.pop(context, _ctrl.text),
                       child: Container(
@@ -6618,7 +7068,7 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                           gradient: const LinearGradient(colors: [Color(0xFF7B1A14), Color(0xFFE53935)]),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
                           Icon(Icons.check_rounded, color: Colors.white, size: 16),
                           SizedBox(width: 6),
                           Text('حفظ', style: TextStyle(fontFamily: 'Tajawal', fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
@@ -6628,11 +7078,33 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'محرر الوصف',
+                        _previewMode ? 'معاينة المنشور' : 'محرر الوصف',
                         style: TextStyle(fontFamily: 'Tajawal', fontSize: 17, fontWeight: FontWeight.bold, color: textColor),
                         textAlign: TextAlign.center,
                       ),
                     ),
+                    // زر تبديل المعاينة
+                    GestureDetector(
+                      onTap: () => setState(() => _previewMode = !_previewMode),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 38, height: 38,
+                        decoration: BoxDecoration(
+                          color: _previewMode
+                              ? Colors.red.withOpacity(0.2)
+                              : (widget.isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06)),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _previewMode ? Colors.red.withOpacity(0.5) : Colors.transparent),
+                        ),
+                        child: Icon(
+                          _previewMode ? Icons.edit_rounded : Icons.visibility_rounded,
+                          color: _previewMode ? Colors.red : (widget.isDark ? Colors.white54 : Colors.black45),
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // زر إغلاق
                     GestureDetector(
                       onTap: () => Navigator.pop(context, null),
                       child: Container(
@@ -6648,149 +7120,227 @@ class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
                 ),
               ),
 
-              // ── شريط الأدوات ──
-              Container(
-                height: 50,
-                color: widget.isDark ? const Color(0xFF161616) : const Color(0xFFEEEEEE),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Row(
-                    children: [
-                      _toolbarBtn(
-                        icon: Icons.format_bold,
-                        tooltip: 'عريض **نص**',
-                        active: _bold,
-                        onTap: () {
-                          setState(() => _bold = !_bold);
-                          _wrapSelection('**', '**');
-                        },
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.format_italic,
-                        tooltip: 'مائل *نص*',
-                        active: _italic,
-                        onTap: () {
-                          setState(() => _italic = !_italic);
-                          _wrapSelection('*', '*');
-                        },
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.format_underline,
-                        tooltip: 'تحته خط <u>نص</u>',
-                        active: _underline,
-                        onTap: () {
-                          setState(() => _underline = !_underline);
-                          _wrapSelection('<u>', '</u>');
-                        },
-                      ),
-                      Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
-                      _toolbarBtn(
-                        icon: Icons.title,
-                        tooltip: 'عنوان كبير',
-                        onTap: () => _insertLine('## '),
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.format_list_bulleted,
-                        tooltip: 'قائمة نقطية',
-                        onTap: () => _insertLine('• '),
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.format_list_numbered,
-                        tooltip: 'قائمة مرقمة',
-                        onTap: () => _insertLine('1. '),
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.format_quote,
-                        tooltip: 'اقتباس',
-                        onTap: () => _insertLine('> '),
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.horizontal_rule,
-                        tooltip: 'فاصل',
-                        onTap: () {
-                          final pos = _ctrl.selection.end;
-                          final text = _ctrl.text;
-                          final newText = '${text.substring(0, pos)}\n---\n${text.substring(pos)}';
-                          _ctrl.value = TextEditingValue(
-                            text: newText,
-                            selection: TextSelection.collapsed(offset: pos + 6),
-                          );
-                        },
-                      ),
-                      Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
-                      _toolbarBtn(
-                        icon: Icons.link,
-                        tooltip: 'رابط',
-                        onTap: () => _wrapSelection('[', '](رابط)'),
-                      ),
-                      _toolbarBtn(
-                        icon: Icons.code,
-                        tooltip: 'كود',
-                        onTap: () => _wrapSelection('`', '`'),
-                      ),
-                      _toolbarBtn(
-                        icon: _rtl ? Icons.format_textdirection_r_to_l : Icons.format_textdirection_l_to_r,
-                        tooltip: 'اتجاه النص',
-                        active: _rtl,
-                        onTap: () => setState(() => _rtl = !_rtl),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── منطقة الكتابة ──
-              Expanded(
-                child: Container(
-                  color: bg,
-                  padding: const EdgeInsets.all(16),
-                  child: Directionality(
-                    textDirection: _rtl ? TextDirection.rtl : TextDirection.ltr,
-                    child: TextField(
-                      controller: _ctrl,
-                      focusNode: _focusNode,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      textAlign: _rtl ? TextAlign.right : TextAlign.left,
-                      style: TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 16,
-                        height: 1.7,
-                        color: textColor,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'اكتب وصف المنشور هنا...\n\nيمكنك استخدام:\n**نص عريض**  *مائل*  ## عنوان\n• قائمة  > اقتباس  `كود`',
-                        hintStyle: TextStyle(
-                          fontFamily: 'Tajawal',
-                          fontSize: 14,
-                          color: widget.isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.15),
-                          height: 1.7,
+              // ── شريط الأدوات (يُخفى في وضع المعاينة) ──
+              if (!_previewMode)
+                Container(
+                  height: 50,
+                  color: widget.isDark ? const Color(0xFF161616) : const Color(0xFFEAEAEA),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      children: [
+                        _toolbarBtn(
+                          icon: Icons.format_bold,
+                          tooltip: 'عريض',
+                          active: isBold,
+                          onTap: () => _wrapSelection('**', '**'),
                         ),
-                        border: InputBorder.none,
-                      ),
+                        _toolbarBtn(
+                          icon: Icons.format_italic,
+                          tooltip: 'مائل',
+                          active: isItalic,
+                          onTap: () => _wrapSelection('*', '*'),
+                        ),
+                        _toolbarBtn(
+                          icon: Icons.format_underline,
+                          tooltip: 'تحته خط',
+                          active: isUnderline,
+                          onTap: () => _wrapSelection('<u>', '</u>'),
+                        ),
+                        Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
+                        _toolbarBtn(
+                          icon: Icons.title,
+                          tooltip: 'عنوان كبير',
+                          onTap: () => _insertLinePrefix('## '),
+                        ),
+                        _toolbarBtn(
+                          icon: Icons.format_list_bulleted,
+                          tooltip: 'قائمة نقطية',
+                          onTap: () => _insertLinePrefix('• '),
+                        ),
+                        _toolbarBtn(
+                          icon: Icons.format_list_numbered,
+                          tooltip: 'قائمة مرقمة',
+                          onTap: () => _insertLinePrefix('1. '),
+                        ),
+                        _toolbarBtn(
+                          icon: Icons.format_quote,
+                          tooltip: 'اقتباس',
+                          onTap: () => _insertLinePrefix('> '),
+                        ),
+                        _toolbarBtn(
+                          icon: Icons.horizontal_rule,
+                          tooltip: 'فاصل أفقي',
+                          onTap: _insertHorizontalRule,
+                        ),
+                        Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
+                        _toolbarBtn(
+                          icon: Icons.link,
+                          tooltip: 'رابط',
+                          onTap: _showLinkDialog,
+                        ),
+                        _toolbarBtn(
+                          icon: Icons.code,
+                          tooltip: 'كود',
+                          onTap: () => _wrapSelection('`', '`'),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+
+              // ── منطقة المحرر أو المعاينة ──
+              Expanded(
+                child: _previewMode
+                    // ── وضع المعاينة: Html widget ──
+                    ? SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: Align(
+                          alignment: Alignment.topRight,
+                          child: _ctrl.text.trim().isEmpty
+                              ? Text(
+                                  'لا يوجد محتوى للمعاينة',
+                                  style: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    color: widget.isDark ? Colors.white24 : Colors.black26,
+                                    fontSize: 15,
+                                  ),
+                                )
+                              : Html(
+                                  data: markdownToHtml(_ctrl.text),
+                                  style: {
+                                    'body': Style(
+                                      margin: Margins.zero,
+                                      padding: HtmlPaddings.zero,
+                                      color: textColor,
+                                      fontFamily: 'Tajawal',
+                                      fontSize: FontSize(16),
+                                      lineHeight: LineHeight.number(1.8),
+                                      textAlign: TextAlign.right,
+                                    ),
+                                    'strong': Style(fontWeight: FontWeight.bold),
+                                    'em': Style(fontStyle: FontStyle.italic),
+                                    'a': Style(color: Colors.red),
+                                    'h1': Style(color: Colors.red, fontFamily: 'Tajawal'),
+                                    'h2': Style(color: Colors.red, fontFamily: 'Tajawal'),
+                                    'h3': Style(color: Colors.red, fontFamily: 'Tajawal'),
+                                    'code': Style(
+                                      backgroundColor: Colors.red.withOpacity(0.1),
+                                      color: Colors.red.shade300,
+                                      fontFamily: 'monospace',
+                                    ),
+                                    'blockquote': Style(
+                                      color: (textColor).withOpacity(0.55),
+                                      fontStyle: FontStyle.italic,
+                                      border: Border(right: BorderSide(color: Colors.red, width: 3)),
+                                      padding: HtmlPaddings.only(right: 12),
+                                    ),
+                                  },
+                                ),
+                        ),
+                      )
+                    // ── وضع التحرير: TextField مع RichText overlay ──
+                    : Container(
+                        color: bg,
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Stack(
+                          children: [
+                            // RichText خلفي للعرض المرئي
+                            Positioned.fill(
+                              child: SingleChildScrollView(
+                                physics: const NeverScrollableScrollPhysics(),
+                                child: Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: Padding(
+                                    // محاذاة مع TextField الداخلي
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: RichText(
+                                      textDirection: TextDirection.rtl,
+                                      text: TextSpan(
+                                        children: _ctrl.text.isEmpty
+                                            ? [TextSpan(text: '', style: baseStyle)]
+                                            : _buildRichSpans(_ctrl.text, baseStyle),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // TextField شفاف فوق RichText للتحديد والكتابة
+                            Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: TextField(
+                                controller: _ctrl,
+                                focusNode: _focusNode,
+                                maxLines: null,
+                                expands: true,
+                                textDirection: TextDirection.rtl,
+                                textAlign: TextAlign.right,
+                                textAlignVertical: TextAlignVertical.top,
+                                // اللون شفاف تماماً - RichText يعرض النص
+                                style: baseStyle.copyWith(color: Colors.transparent),
+                                cursorColor: Colors.red,
+                                cursorWidth: 2,
+                                selectionControls: MaterialTextSelectionControls(),
+                                decoration: InputDecoration(
+                                  hintText: _ctrl.text.isEmpty
+                                      ? 'اكتب وصف المنشور هنا...'
+                                      : null,
+                                  hintStyle: TextStyle(
+                                    fontFamily: 'Tajawal',
+                                    fontSize: 15,
+                                    color: widget.isDark ? Colors.white.withOpacity(0.18) : Colors.black.withOpacity(0.2),
+                                    height: 1.75,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
               ),
 
               // ── شريط المعلومات السفلي ──
               Container(
                 height: 36,
-                color: widget.isDark ? const Color(0xFF161616) : const Color(0xFFEEEEEE),
+                color: widget.isDark ? const Color(0xFF161616) : const Color(0xFFEAEAEA),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    Icon(Icons.text_fields_rounded, size: 14, color: widget.isDark ? Colors.white30 : Colors.black38),
+                    Icon(
+                      _previewMode ? Icons.visibility_rounded : Icons.text_fields_rounded,
+                      size: 14,
+                      color: widget.isDark ? Colors.white30 : Colors.black38,
+                    ),
                     const SizedBox(width: 6),
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _ctrl,
                       builder: (_, v, __) => Text(
-                        '${v.text.length} حرف  |  ${v.text.split('\n').length} سطر',
-                        style: TextStyle(fontFamily: 'Tajawal', fontSize: 12, color: widget.isDark ? Colors.white30 : Colors.black38),
+                        '${v.text.length} حرف  |  ${v.text.split('\n').length} سطر'
+                        '${_previewMode ? '  |  معاينة' : ''}',
+                        style: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 12,
+                          color: widget.isDark ? Colors.white30 : Colors.black38,
+                        ),
                       ),
                     ),
+                    const Spacer(),
+                    if (!_previewMode)
+                      GestureDetector(
+                        onTap: () => setState(() => _previewMode = true),
+                        child: Text(
+                          'معاينة المنشور ←',
+                          style: TextStyle(
+                            fontFamily: 'Tajawal',
+                            fontSize: 12,
+                            color: Colors.red.withOpacity(0.7),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -6833,6 +7383,7 @@ class _WysiwygDescFieldState extends State<_WysiwygDescField> {
   @override
   Widget build(BuildContext context) {
     final isEmpty = widget.controller.text.trim().isEmpty;
+    final previewHtml = isEmpty ? '' : markdownToHtml(widget.controller.text);
     return GestureDetector(
       onTap: _openEditor,
       child: Container(
@@ -6856,15 +7407,30 @@ class _WysiwygDescFieldState extends State<_WysiwygDescField> {
                         color: widget.isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.15),
                       ),
                     )
-                  : Text(
-                      widget.controller.text,
-                      maxLines: 5,
-                      overflow: TextOverflow.fade,
-                      style: TextStyle(
-                        fontFamily: 'Tajawal',
-                        fontSize: 14,
-                        color: widget.isDark ? Colors.white70 : Colors.black87,
-                        height: 1.6,
+                  : IgnorePointer(
+                      child: Html(
+                        data: previewHtml,
+                        style: {
+                          'body': Style(
+                            margin: Margins.zero,
+                            padding: HtmlPaddings.zero,
+                            color: widget.isDark ? Colors.white70 : Colors.black87,
+                            fontFamily: 'Tajawal',
+                            fontSize: FontSize(14),
+                            lineHeight: LineHeight.number(1.6),
+                            textAlign: TextAlign.right,
+                          ),
+                          'p': Style(margin: Margins.zero, padding: HtmlPaddings.zero),
+                          'strong': Style(fontWeight: FontWeight.bold),
+                          'em': Style(fontStyle: FontStyle.italic),
+                          'a': Style(color: Colors.red),
+                          'h1': Style(color: Colors.red, fontFamily: 'Tajawal'),
+                          'h2': Style(color: Colors.red, fontFamily: 'Tajawal'),
+                          'code': Style(
+                            backgroundColor: Colors.red.withOpacity(0.1),
+                            color: Colors.red.shade300,
+                          ),
+                        },
                       ),
                     ),
             ),
@@ -6947,7 +7513,7 @@ class _AdminPublishTabState extends State<_AdminPublishTab> {
     try {
       final req = http.MultipartRequest('POST', Uri.parse(_apiAdd));
       req.fields['title'] = _titleCtrl.text.trim();
-      req.fields['description'] = _type == 'normal' ? _descCtrl.text.trim() : '';
+      req.fields['description'] = _type == 'normal' ? markdownToHtml(_descCtrl.text.trim()) : '';
       req.fields['type'] = _type;
       req.files.add(await http.MultipartFile.fromPath('image', _imageFile!.path));
       if (_type == 'file' && _attachFile != null) {
@@ -7122,7 +7688,7 @@ class _AdminEditTabState extends State<_AdminEditTab> {
       final req = http.MultipartRequest('POST', Uri.parse(_apiEdit));
       req.fields['post_id'] = _editing!.id;
       req.fields['title'] = _editTitleCtrl.text.trim();
-      req.fields['description'] = _editType == 'normal' ? _editDescCtrl.text.trim() : '';
+      req.fields['description'] = _editType == 'normal' ? markdownToHtml(_editDescCtrl.text.trim()) : '';
       req.fields['type'] = _editType;
       if (_editImageFile != null) {
         req.files.add(await http.MultipartFile.fromPath('image', _editImageFile!.path));
@@ -7135,7 +7701,7 @@ class _AdminEditTabState extends State<_AdminEditTab> {
         final updatedPost = AdminPost(
           id: _editing!.id,
           title: _editTitleCtrl.text.trim(),
-          description: _editType == 'normal' ? _editDescCtrl.text.trim() : '',
+          description: _editType == 'normal' ? markdownToHtml(_editDescCtrl.text.trim()) : '',
           image: _editImageFile != null
               ? (json['image']?.toString() ?? _editing!.image)
               : _editing!.image,
