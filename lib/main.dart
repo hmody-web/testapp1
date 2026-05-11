@@ -24,6 +24,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import 'firebase_options.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -4918,7 +4919,7 @@ Future<void> _handleGoogleSignIn() async {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('فشل تسجيل الدخول: $e'),
+          content: Text('فشل تسجيل الدخول'),
           backgroundColor: Colors.red,
         ),
       );
@@ -4971,7 +4972,7 @@ Future<void> _handleGoogleSignIn() async {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل تسجيل الخروج: ${e.toString()}'),
+            content: Text('فشل تسجيل الخروج'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -6497,6 +6498,386 @@ class AdminPost {
 }
 
 // ────────────────────────────────────────────────────────────
+// WYSIWYG محرر النصوص بملء الشاشة
+// ────────────────────────────────────────────────────────────
+
+/// صفحة المحرر الكاملة
+class _FullScreenEditorPage extends StatefulWidget {
+  final String initialText;
+  final bool isDark;
+  const _FullScreenEditorPage({required this.initialText, required this.isDark});
+
+  @override
+  State<_FullScreenEditorPage> createState() => _FullScreenEditorPageState();
+}
+
+class _FullScreenEditorPageState extends State<_FullScreenEditorPage> {
+  late TextEditingController _ctrl;
+  late FocusNode _focusNode;
+
+  // toolbar state
+  bool _bold = false;
+  bool _italic = false;
+  bool _underline = false;
+  bool _rtl = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initialText);
+    _focusNode = FocusNode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _wrapSelection(String before, String after) {
+    final sel = _ctrl.selection;
+    if (!sel.isValid) return;
+    final text = _ctrl.text;
+    final selectedText = sel.textInside(text);
+    final newText = text.replaceRange(sel.start, sel.end, '$before$selectedText$after');
+    _ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: sel.start + before.length + selectedText.length + after.length),
+    );
+  }
+
+  void _insertLine(String prefix) {
+    final sel = _ctrl.selection;
+    if (!sel.isValid) return;
+    final text = _ctrl.text;
+    final lineStart = text.lastIndexOf('\n', sel.start - 1) + 1;
+    final newText = text.replaceRange(lineStart, lineStart, prefix);
+    _ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: sel.start + prefix.length),
+    );
+  }
+
+  Widget _toolbarBtn({required IconData icon, required String tooltip, required VoidCallback onTap, bool active = false}) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 38,
+          height: 38,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.red.withOpacity(0.25)
+                : (widget.isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active ? Colors.red.withOpacity(0.5) : Colors.transparent,
+              width: 1,
+            ),
+          ),
+          child: Icon(icon, size: 18, color: active ? Colors.red : (widget.isDark ? Colors.white70 : Colors.black54)),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isDark ? const Color(0xFF111111) : Colors.white;
+    final surface = widget.isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F5F5);
+    final textColor = widget.isDark ? Colors.white : Colors.black87;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ── شريط العنوان ──
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: surface,
+                  border: Border(bottom: BorderSide(color: Colors.red.withOpacity(0.25), width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context, _ctrl.text),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [Color(0xFF7B1A14), Color(0xFFE53935)]),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                          Icon(Icons.check_rounded, color: Colors.white, size: 16),
+                          SizedBox(width: 6),
+                          Text('حفظ', style: TextStyle(fontFamily: 'Tajawal', fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                        ]),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'محرر الوصف',
+                        style: TextStyle(fontFamily: 'Tajawal', fontSize: 17, fontWeight: FontWeight.bold, color: textColor),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context, null),
+                      child: Container(
+                        width: 38, height: 38,
+                        decoration: BoxDecoration(
+                          color: widget.isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.close_rounded, color: widget.isDark ? Colors.white54 : Colors.black45, size: 18),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── شريط الأدوات ──
+              Container(
+                height: 50,
+                color: widget.isDark ? const Color(0xFF161616) : const Color(0xFFEEEEEE),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    children: [
+                      _toolbarBtn(
+                        icon: Icons.format_bold,
+                        tooltip: 'عريض **نص**',
+                        active: _bold,
+                        onTap: () {
+                          setState(() => _bold = !_bold);
+                          _wrapSelection('**', '**');
+                        },
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.format_italic,
+                        tooltip: 'مائل *نص*',
+                        active: _italic,
+                        onTap: () {
+                          setState(() => _italic = !_italic);
+                          _wrapSelection('*', '*');
+                        },
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.format_underline,
+                        tooltip: 'تحته خط <u>نص</u>',
+                        active: _underline,
+                        onTap: () {
+                          setState(() => _underline = !_underline);
+                          _wrapSelection('<u>', '</u>');
+                        },
+                      ),
+                      Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
+                      _toolbarBtn(
+                        icon: Icons.title,
+                        tooltip: 'عنوان كبير',
+                        onTap: () => _insertLine('## '),
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.format_list_bulleted,
+                        tooltip: 'قائمة نقطية',
+                        onTap: () => _insertLine('• '),
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.format_list_numbered,
+                        tooltip: 'قائمة مرقمة',
+                        onTap: () => _insertLine('1. '),
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.format_quote,
+                        tooltip: 'اقتباس',
+                        onTap: () => _insertLine('> '),
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.horizontal_rule,
+                        tooltip: 'فاصل',
+                        onTap: () {
+                          final pos = _ctrl.selection.end;
+                          final text = _ctrl.text;
+                          final newText = '${text.substring(0, pos)}\n---\n${text.substring(pos)}';
+                          _ctrl.value = TextEditingValue(
+                            text: newText,
+                            selection: TextSelection.collapsed(offset: pos + 6),
+                          );
+                        },
+                      ),
+                      Container(width: 1, height: 26, color: widget.isDark ? Colors.white12 : Colors.black12, margin: const EdgeInsets.symmetric(horizontal: 4)),
+                      _toolbarBtn(
+                        icon: Icons.link,
+                        tooltip: 'رابط',
+                        onTap: () => _wrapSelection('[', '](رابط)'),
+                      ),
+                      _toolbarBtn(
+                        icon: Icons.code,
+                        tooltip: 'كود',
+                        onTap: () => _wrapSelection('`', '`'),
+                      ),
+                      _toolbarBtn(
+                        icon: _rtl ? Icons.format_textdirection_r_to_l : Icons.format_textdirection_l_to_r,
+                        tooltip: 'اتجاه النص',
+                        active: _rtl,
+                        onTap: () => setState(() => _rtl = !_rtl),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── منطقة الكتابة ──
+              Expanded(
+                child: Container(
+                  color: bg,
+                  padding: const EdgeInsets.all(16),
+                  child: Directionality(
+                    textDirection: _rtl ? TextDirection.rtl : TextDirection.ltr,
+                    child: TextField(
+                      controller: _ctrl,
+                      focusNode: _focusNode,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      textAlign: _rtl ? TextAlign.right : TextAlign.left,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 16,
+                        height: 1.7,
+                        color: textColor,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'اكتب وصف المنشور هنا...\n\nيمكنك استخدام:\n**نص عريض**  *مائل*  ## عنوان\n• قائمة  > اقتباس  `كود`',
+                        hintStyle: TextStyle(
+                          fontFamily: 'Tajawal',
+                          fontSize: 14,
+                          color: widget.isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.15),
+                          height: 1.7,
+                        ),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── شريط المعلومات السفلي ──
+              Container(
+                height: 36,
+                color: widget.isDark ? const Color(0xFF161616) : const Color(0xFFEEEEEE),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.text_fields_rounded, size: 14, color: widget.isDark ? Colors.white30 : Colors.black38),
+                    const SizedBox(width: 6),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _ctrl,
+                      builder: (_, v, __) => Text(
+                        '${v.text.length} حرف  |  ${v.text.split('\n').length} سطر',
+                        style: TextStyle(fontFamily: 'Tajawal', fontSize: 12, color: widget.isDark ? Colors.white30 : Colors.black38),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// حقل الوصف WYSIWYG - يفتح المحرر الكامل عند الضغط
+class _WysiwygDescField extends StatefulWidget {
+  final TextEditingController controller;
+  final bool isDark;
+  const _WysiwygDescField({required this.controller, required this.isDark});
+
+  @override
+  State<_WysiwygDescField> createState() => _WysiwygDescFieldState();
+}
+
+class _WysiwygDescFieldState extends State<_WysiwygDescField> {
+  Future<void> _openEditor() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _FullScreenEditorPage(
+          initialText: widget.controller.text,
+          isDark: widget.isDark,
+        ),
+      ),
+    );
+    if (result != null) {
+      widget.controller.text = result;
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEmpty = widget.controller.text.trim().isEmpty;
+    return GestureDetector(
+      onTap: _openEditor,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 110),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: widget.isDark ? const Color(0xFF111111) : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.red.withOpacity(0.25), width: 1),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: isEmpty
+                  ? Text(
+                      'اضغط للكتابة بملء الشاشة...',
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 14,
+                        color: widget.isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.15),
+                      ),
+                    )
+                  : Text(
+                      widget.controller.text,
+                      maxLines: 5,
+                      overflow: TextOverflow.fade,
+                      style: TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontSize: 14,
+                        color: widget.isDark ? Colors.white70 : Colors.black87,
+                        height: 1.6,
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.open_in_full_rounded, color: Colors.red.withOpacity(0.6), size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────
 // تاب النشر
 // ────────────────────────────────────────────────────────────
 class _AdminPublishTab extends StatefulWidget {
@@ -6531,7 +6912,20 @@ class _AdminPublishTabState extends State<_AdminPublishTab> {
   }
 
   Future<void> _pickFile() async {
-    setState(() => _msg = 'قريباً: رفع الملفات');
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final filePath = result.files.single.path;
+        if (filePath != null) {
+          setState(() => _attachFile = XFile(filePath));
+        }
+      }
+    } catch (e) {
+      if (mounted) _show('❌ تعذر فتح اختيار الملف', false);
+    }
   }
 
   Future<void> _submit() async {
@@ -6577,7 +6971,13 @@ class _AdminPublishTabState extends State<_AdminPublishTab> {
     }
   }
 
-  void _show(String msg, bool ok) => setState(() { _msg = msg; _success = ok; });
+  void _show(String msg, bool ok) {
+    if (!mounted) return;
+    setState(() { _msg = msg; _success = ok; });
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _msg = null);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6614,8 +7014,14 @@ class _AdminPublishTabState extends State<_AdminPublishTab> {
               isDark: widget.isDark,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 _AdminFieldLabel('الوصف', Icons.notes_rounded, widget.isDark),
-                const SizedBox(height: 10),
-                _AdminTextField(controller: _descCtrl, hint: 'اكتب وصف المنشور هنا...', isDark: widget.isDark, maxLines: 5),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Icon(Icons.open_in_full_rounded, color: Colors.red.withOpacity(0.5), size: 13),
+                  const SizedBox(width: 4),
+                  Text('اضغط لفتح المحرر بملء الشاشة', style: TextStyle(fontFamily: 'Tajawal', fontSize: 11, color: widget.isDark ? Colors.white30 : Colors.black38)),
+                ]),
+                const SizedBox(height: 8),
+                _WysiwygDescField(controller: _descCtrl, isDark: widget.isDark),
               ]),
             ),
             const SizedBox(height: 14),
@@ -6725,9 +7131,23 @@ class _AdminEditTabState extends State<_AdminEditTab> {
       final body = await res.stream.bytesToString();
       final json = jsonDecode(body);
       if (json['success'] == true) {
+        // تحديث المنشور محلياً بدون إعادة تحميل الصفحة
+        final updatedPost = AdminPost(
+          id: _editing!.id,
+          title: _editTitleCtrl.text.trim(),
+          description: _editType == 'normal' ? _editDescCtrl.text.trim() : '',
+          image: _editImageFile != null
+              ? (json['image']?.toString() ?? _editing!.image)
+              : _editing!.image,
+          file: _editing!.file,
+          type: _editType,
+        );
+        setState(() {
+          final idx = _posts.indexWhere((p) => p.id == _editing!.id);
+          if (idx != -1) _posts[idx] = updatedPost;
+          _editing = null;
+        });
         _show('✅ تم التعديل بنجاح', true);
-        setState(() => _editing = null);
-        _fetchPosts();
       } else {
         _show('❌ ${json['message'] ?? 'حدث خطأ'}', false);
       }
@@ -6748,8 +7168,9 @@ class _AdminEditTabState extends State<_AdminEditTab> {
       final res = await http.post(Uri.parse(_apiDelete), body: {'post_id': post.id});
       final json = jsonDecode(res.body);
       if (json['success'] == true) {
+        // حذف المنشور محلياً بدون إعادة تحميل الصفحة
+        setState(() => _posts.removeWhere((p) => p.id == post.id));
         _show('🗑️ تم الحذف بنجاح', true);
-        _fetchPosts();
       } else {
         _show('❌ فشل الحذف', false);
       }
@@ -6758,7 +7179,13 @@ class _AdminEditTabState extends State<_AdminEditTab> {
     }
   }
 
-  void _show(String msg, bool ok) => setState(() { _msg = msg; _success = ok; });
+  void _show(String msg, bool ok) {
+    if (!mounted) return;
+    setState(() { _msg = msg; _success = ok; });
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _msg = null);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6906,7 +7333,7 @@ class _AdminPostCard extends StatelessWidget {
 // ────────────────────────────────────────────────────────────
 // نموذج التعديل
 // ────────────────────────────────────────────────────────────
-class _AdminEditForm extends StatelessWidget {
+class _AdminEditForm extends StatefulWidget {
   final AdminPost post;
   final bool isDark;
   final TextEditingController titleCtrl;
@@ -6922,48 +7349,59 @@ class _AdminEditForm extends StatelessWidget {
   const _AdminEditForm({required this.post, required this.isDark, required this.titleCtrl, required this.descCtrl, required this.type, required this.imageFile, required this.saving, required this.onTypeChanged, required this.onPickImage, required this.onSave, required this.onCancel});
 
   @override
+  State<_AdminEditForm> createState() => _AdminEditFormState();
+}
+
+class _AdminEditFormState extends State<_AdminEditForm> {
+  @override
   Widget build(BuildContext context) {
     return _AdminSectionCard(
-      isDark: isDark,
+      isDark: widget.isDark,
       borderColor: Colors.blue.withOpacity(0.4),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           const Icon(Icons.edit_rounded, color: Colors.blue, size: 18),
           const SizedBox(width: 8),
-          Expanded(child: Text('تعديل: ${post.title}', style: TextStyle(fontFamily: 'Tajawal', fontSize: 15, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          Expanded(child: Text('تعديل: ${widget.post.title}', style: TextStyle(fontFamily: 'Tajawal', fontSize: 15, fontWeight: FontWeight.bold, color: widget.isDark ? Colors.white : Colors.black), maxLines: 1, overflow: TextOverflow.ellipsis)),
         ]),
         const SizedBox(height: 16),
-        _AdminFieldLabel('نوع المنشور', Icons.category_rounded, isDark),
+        _AdminFieldLabel('نوع المنشور', Icons.category_rounded, widget.isDark),
         const SizedBox(height: 8),
-        _AdminTypeSelector(selected: type, isDark: isDark, onChanged: onTypeChanged),
+        _AdminTypeSelector(selected: widget.type, isDark: widget.isDark, onChanged: widget.onTypeChanged),
         const SizedBox(height: 14),
-        _AdminFieldLabel('العنوان', Icons.title_rounded, isDark),
+        _AdminFieldLabel('العنوان', Icons.title_rounded, widget.isDark),
         const SizedBox(height: 8),
-        _AdminTextField(controller: titleCtrl, hint: 'العنوان', isDark: isDark),
+        _AdminTextField(controller: widget.titleCtrl, hint: 'العنوان', isDark: widget.isDark),
         const SizedBox(height: 14),
-        if (type == 'normal') ...[
-          _AdminFieldLabel('الوصف', Icons.notes_rounded, isDark),
+        if (widget.type == 'normal') ...[
+          _AdminFieldLabel('الوصف', Icons.notes_rounded, widget.isDark),
+          const SizedBox(height: 6),
+          Row(children: [
+            Icon(Icons.open_in_full_rounded, color: Colors.red.withOpacity(0.5), size: 13),
+            const SizedBox(width: 4),
+            Text('اضغط لفتح المحرر بملء الشاشة', style: TextStyle(fontFamily: 'Tajawal', fontSize: 11, color: widget.isDark ? Colors.white30 : Colors.black38)),
+          ]),
           const SizedBox(height: 8),
-          _AdminTextField(controller: descCtrl, hint: 'الوصف', isDark: isDark, maxLines: 4),
+          _WysiwygDescField(controller: widget.descCtrl, isDark: widget.isDark),
           const SizedBox(height: 14),
         ],
-        _AdminFieldLabel('تغيير الصورة (اختياري)', Icons.image_rounded, isDark),
+        _AdminFieldLabel('تغيير الصورة (اختياري)', Icons.image_rounded, widget.isDark),
         const SizedBox(height: 8),
-        _AdminImagePickerBox(file: imageFile, isDark: isDark, onTap: onPickImage, existingUrl: post.imageUrl),
+        _AdminImagePickerBox(file: widget.imageFile, isDark: widget.isDark, onTap: widget.onPickImage, existingUrl: widget.post.imageUrl),
         const SizedBox(height: 18),
         Row(children: [
           Expanded(
             child: GestureDetector(
-              onTap: onCancel,
+              onTap: widget.onCancel,
               child: Container(
                 height: 46,
-                decoration: BoxDecoration(color: isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06), borderRadius: BorderRadius.circular(14)),
-                child: Center(child: Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal', fontSize: 15, fontWeight: FontWeight.bold, color: isDark ? Colors.white70 : Colors.black54))),
+                decoration: BoxDecoration(color: widget.isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06), borderRadius: BorderRadius.circular(14)),
+                child: Center(child: Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal', fontSize: 15, fontWeight: FontWeight.bold, color: widget.isDark ? Colors.white70 : Colors.black54))),
               ),
             ),
           ),
           const SizedBox(width: 10),
-          Expanded(flex: 2, child: _AdminSubmitButton(label: 'حفظ التعديلات', icon: Icons.save_rounded, loading: saving, onTap: onSave)),
+          Expanded(flex: 2, child: _AdminSubmitButton(label: 'حفظ التعديلات', icon: Icons.save_rounded, loading: widget.saving, onTap: widget.onSave)),
         ]),
       ]),
     );
@@ -7748,7 +8186,7 @@ class _AppsPageState extends State<AppsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'فشل تحميل ${app.title}: ${e.toString().replaceAll('Exception: ', '')}',
+              'فشل تحميل ${app.title} ',
               textAlign: TextAlign.center,
               style: const TextStyle(fontFamily: 'Tajawal'),
             ),
