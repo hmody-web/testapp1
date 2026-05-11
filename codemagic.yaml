@@ -7,7 +7,9 @@ workflows:
 
     scripts:
       - flutter pub get
+      - cd ios
       - xcodebuild CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+      - cd ..
       - flutter build ios --release --no-codesign
 
     artifacts:
